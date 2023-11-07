@@ -1,11 +1,9 @@
 import pathlib
 import yaml
 
-from .paths import root_repo_folder
 
 
-def load_config(species):
-    config_path = pathlib.Path(__file__).parent.parent / "organism_configs" / (species + ".yml")
+def load_config(config_path):
     with open(config_path) as f:
         config = yaml.safe_load(f)
 

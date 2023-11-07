@@ -21,7 +21,7 @@ class Quill:
         adata=None,
         output_filename=None,
         celltype_column=None,
-        configutation=None,
+        configuration=None,
         include_neighborhood=True,
         ):
 
@@ -39,7 +39,7 @@ class Quill:
         self.compress()
         self.store()
 
-    def _validate_constructor():
+    def _validate_constructor(self):
         self.configuration = self.configuration or {}
         self.include_neighborhood = bool(self.include_neighborhood)
 
@@ -78,9 +78,9 @@ class Quill:
 
     def store(self):
         config = self.configuration
-
-        store_approximation(
-            self.output_filename,
-            self.approximation,
-            config.get("measurement_type", guess_measurement_type(self.adata)),
-        )
+        if self.output_filename is not None:
+            store_approximation(
+                self.output_filename,
+                self.approximation,
+                config.get("measurement_type", guess_measurement_type(self.adata)),
+            )

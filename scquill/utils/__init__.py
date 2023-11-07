@@ -22,6 +22,10 @@ from .compress import (
     approximate_dataset,
     store_approximation,
 )
+from .heuristics import (
+    guess_normalisation,
+    guess_measurement_type,
+)
 
 
 def sanitise_gene_names(genes):
@@ -36,12 +40,3 @@ def sanitise_gene_names(genes):
 
     return genes_new
 
-
-# TODO
-def guess_normalisation(adata):
-    return None
-
-
-# TODO
-def guess_measurement_type(adata):
-    return None
