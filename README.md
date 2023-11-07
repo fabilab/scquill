@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/fabilab/scquill/main/logo.svg" width="150" height="150">
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/logo.png" width="150" height="150">
 
 # scquill
 Approximate any single cell data set, saving >99% of memory and runtime.
