@@ -47,3 +47,43 @@ def guess_measurement_type(adata):
 
     return 'gene_expression'
 
+
+def guess_celltype_column(adata):
+    guesses = [
+        'celltype',
+        'cell_type',
+        'cell-type',
+        'CellType',
+        'cellType',
+        'Cell_Type',
+        'cell_annotation',
+        'CellAnnotation',
+        'cellAnnotation',
+        'annotation',
+        'cell_ontology_class',
+        'free_annotation',
+        'broad_type',
+        'type',
+    ]
+
+    cols = adata.obs.columns
+
+    # Exact matches
+    for guess in guesses:
+        if guess in cols:
+            return guess
+
+    # Exact substring
+    for guess in guesses:
+        for col in cols:
+            if guess in col:
+                return col
+
+    raise ValueError("Cannot guess celltype column")
+
+
+def guess_celltype_order(adata, celltype_column):
+    """Guess the order of cell types"""
+    # TODO: try to come up with something better than this...
+    unique = adata.obs[celltype_column].value_counts().index
+    return list(unique)

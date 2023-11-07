@@ -1,3 +1,4 @@
+import os
 import pathlib
 import anndata
 
@@ -10,6 +11,8 @@ from .utils import (
     store_approximation,
     guess_measurement_type,
     guess_normalisation,
+    guess_celltype_column,
+    guess_celltype_order,
     )
 
 
@@ -21,6 +24,7 @@ class Quill:
         adata=None,
         output_filename=None,
         celltype_column=None,
+        celltype_order=None,
         configuration=None,
         include_neighborhood=True,
         ):
@@ -29,6 +33,7 @@ class Quill:
         self.adata = adata
         self.output_filename = output_filename
         self.celltype_column = celltype_column
+        self.celltype_order = celltype_order
         self.configuration = configuration
         self.include_neighborhood = include_neighborhood
 
@@ -42,6 +47,16 @@ class Quill:
     def _validate_constructor(self):
         self.configuration = self.configuration or {}
         self.include_neighborhood = bool(self.include_neighborhood)
+        if self.output_filename:
+            self.output_filename = pathlib.Path(self.output_filename)
+
+    def _guess_annotations(self):
+        if self.celltype_column is None:
+            self.celltype_column = guess_celltype_column(self.adata)
+        if self.celltype_order is None:
+            self.celltype_order = guess_celltype_order(
+                self.adata, self.celltype_column,
+            )
 
     def load(self):
         if (self.adata is None) and (self.filename is None):
@@ -52,7 +67,8 @@ class Quill:
         if self.adata is not None:
             return
 
-        self.adata = anndata.read(self.filename)
+        self.adata = anndata.read_h5ad(self.filename)
+        self._guess_annotations()
 
     def preprocess(self):
         config = self.configuration
@@ -65,22 +81,27 @@ class Quill:
             config.get("measurement_type", guess_measurement_type(self.adata)),
         )
 
-        self.adata = correct_annotations(
-            self.adata,
-            self.celltype_column,
-            config,
-        )
+        #self.adata = correct_annotations(
+        #    self.adata,
+        #    self.celltype_column,
+        #    config,
+        #)
 
     def compress(self):
         self.approximation = approximate_dataset(
             self.adata,
+            self.celltype_column,
+            self.celltype_order,
         )
 
     def store(self):
         config = self.configuration
         if self.output_filename is not None:
+            if self.output_filename.exists():
+                os.remove(self.output_filename)
             store_approximation(
                 self.output_filename,
                 self.approximation,
+                self.celltype_order,
                 config.get("measurement_type", guess_measurement_type(self.adata)),
             )

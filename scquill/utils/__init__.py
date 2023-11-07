@@ -20,23 +20,13 @@ from .preprocess import (
 )
 from .compress import (
     approximate_dataset,
+)
+from .store import (
     store_approximation,
 )
 from .heuristics import (
     guess_normalisation,
     guess_measurement_type,
+    guess_celltype_column,
+    guess_celltype_order,
 )
-
-
-def sanitise_gene_names(genes):
-    genes_new = []
-    for gene in genes:
-        gene_new = gene.replace(',', ';')
-        gene_new = gene_new.split(' ')[0]
-        genes_new.append(gene_new)
-
-    if len(set(genes_new)) != len(set(genes)):
-        raise ValueError("Gene names are not unique after sanitisation.")
-
-    return genes_new
-
