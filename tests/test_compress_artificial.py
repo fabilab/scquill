@@ -3,7 +3,7 @@ import scquill
 
 
 def test_300x500_init(shared_datadir):
-    q = scquill.Quill(
+    q = scquill.Compressor(
         filename=shared_datadir / 'artificial_300x500.h5ad',
         output_filename='/tmp/artificial_300x500_approx.h5',
         celltype_column='celltype',
@@ -11,7 +11,7 @@ def test_300x500_init(shared_datadir):
     )
 
 def test_300x500_run(shared_datadir):
-    q = scquill.Quill(
+    q = scquill.Compressor(
         filename=shared_datadir / 'artificial_300x500.h5ad',
         output_filename='/tmp/artificial_300x500_approx.h5',
         celltype_column='celltype',

@@ -46,6 +46,7 @@ def store_approximation(
             comp_kwargs = hdf5plugin.Zstd(clevel=compression)
         except ImportError:
             # TODO: throw some warning
+            compression = False
             comp_kwargs = {}
     else:
         comp_kwargs = {}
@@ -81,22 +82,33 @@ def store_approximation(
     features = compressed_atlas['features'].tolist()
 
     with h5py.File(fn_out, 'a') as h5_data:
-        me = h5_data.create_group(measurement_type)
+        # Version
+        import scquill
+        h5_data.attrs['scquill_version'] = scquill.__version__
+
+        # Umbrella group for measurments (not metadata)
+        me_all = h5_data.create_group('measurements')
+
+        # Subgroup for a specific measurement type (multi-omics will have multiple)
+        me = me_all.create_group(measurement_type)
+    
+        me.attrs['compression'] = compression
+
         me.create_dataset('features', data=np.array(features).astype('S'))
         if quantisation:
             me.create_dataset('quantisation', data=np.array(quantisation_array).astype('f4'))
 
-        #for label in ['celltype', 'celltype_dataset_timepoint']:
-        for label in ['celltype']:
-            group = me.create_group(label)
+        #for groupby in ['celltype', 'celltype_dataset_timepoint']:
+        for groupby in ['celltype']:
+            group = me.create_group(groupby)
 
             # Number of cells
-            ncells = compressed_atlas[label]['ncells']
+            ncells = compressed_atlas[groupby]['ncells']
             group.create_dataset(
                 'cell_count', data=ncells.values, dtype='i8')
 
             # Average in a cell type
-            avg = compressed_atlas[label]['avg']
+            avg = compressed_atlas[groupby]['avg']
             if quantisation:
                 # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
                 avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
@@ -122,7 +134,7 @@ def store_approximation(
             )
             if measurement_type == 'gene_expression':
                 # Fraction detected in a cell type
-                frac = compressed_atlas[label]['frac']
+                frac = compressed_atlas[groupby]['frac']
                 group.create_dataset(
                     'fraction', data=frac.T.values, dtype='f4',
                     **add_kwargs,
@@ -130,7 +142,7 @@ def store_approximation(
                 )
 
             # Local neighborhoods
-            neid = compressed_atlas[label]['neighborhood']
+            neid = compressed_atlas[groupby]['neighborhood']
             neigroup = group.create_group('neighborhood')
             ncells = neid['ncells']
             neigroup.create_dataset(

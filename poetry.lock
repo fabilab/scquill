@@ -43,7 +43,7 @@ numpy = ["numpy"]
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -59,7 +59,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -276,7 +276,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -790,7 +790,7 @@ scipy = ">=1.0"
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -857,7 +857,7 @@ six = ">=1.5"
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -1028,7 +1028,7 @@ tests = ["black (>=23.3.0)", "matplotlib (>=3.1.3)", "mypy (>=1.3)", "numpydoc (
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -1230,7 +1230,7 @@ files = [
 
 [package.source]
 type = "legacy"
-url = "https://test.pypi.org/simple"
+url = "https://test.pypi.org/legacy"
 reference = "pypi-test"
 
 [[package]]
@@ -1258,4 +1258,4 @@ plot = ["bokeh", "colorcet", "datashader", "holoviews", "matplotlib", "pandas", 
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "aa99670fb11b28b6188abfb118b534cde56f97c847236ed439d3ae44b833b340"
+content-hash = "f6155505c31b0c94a016e08326df2a91e0f1cac3c761d8ac2b71a4eb0d6da12b"
