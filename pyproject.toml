@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "scquill"
-version = "0.1.0"
+version = "0.1.1"
 description = "Approximate any single cell data set, saving >99% of memory and runtime."
 authors = ["Fabio Zanini <fabio.zanini@unsw.edu.au>"]
 license = "MIT"
@@ -16,7 +16,7 @@ pyyaml = "^6.0.1"
 
 [[tool.poetry.source]]
 name = "pypi-test"
-url = "https://test.pypi.org/simple/"
+url = "https://test.pypi.org/legacy/"
 priority = "primary"
 
 

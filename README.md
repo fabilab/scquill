@@ -4,7 +4,7 @@
 Approximate any single cell data set, saving >99% of memory and runtime.
 
 
-## Design prototype
+## Approximating a single cell data set
 ```python
 import scquill
 
