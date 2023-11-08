@@ -33,7 +33,7 @@ To show a dot plot:
 ```
 scquill.pl.dotplot(app, ['gene1', 'gene2', 'gene3'])
 ```
-<img src="https://raw.githubusercontent.com/fabilab/scquill/main/dotplot.png" width="350">
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/dotplot.png" width="200">
 
 
 To show a neighborhood plot:
