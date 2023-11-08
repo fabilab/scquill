@@ -5,6 +5,8 @@
 # scquill
 Approximate any single cell data set, saving >99% of memory and runtime.
 
+It's pronounced /ˈskwɪɹl̩// like the [animal](https://en.wiktionary.org/wiki/squirrel).
+
 
 ## Approximating a single cell data set
 ```python
