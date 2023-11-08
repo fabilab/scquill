@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 def _axis_heuristic(nplots):
     nrows = nplots // 4 + int(bool(nplots % 4))
-    ncols = 1 + nplots % 4
+    ncols = min(nplots, 4)
     return (nrows, ncols)
 
 
@@ -25,7 +25,11 @@ def embedding(
 
     if axs is None:
         nrows, ncols = _axis_heuristic(len(features))
-        fig, axs = plt.subplots(nrows, ncols)
+        fig, axs = plt.subplots(
+            nrows, ncols,
+            sharex=True, sharey=True,
+            figsize=(0.2 + 4 * ncols, 0.2 + 4 * nrows),
+        )
         if max(nrows, ncols) == 1:
             axs = [axs]
         elif min(nrows, ncols) > 1:
@@ -49,9 +53,11 @@ def embedding(
     size = max_dot_size * size**2
 
     centers = adata.obsm[f'X_{key}']
-    
+
     # Make an embedding for each feature
-    for i, ax in enumerate(axs):
+    for i, feature in enumerate(features):
+        ax = axs[i]
+
         # Scatter the centers
         huei = hue[:, i]
         sizei = size[:, i]
@@ -72,8 +78,8 @@ def embedding(
             hueij = (hueij - huemin) / (huemax - huemin)
             norm = hueij
             hueij = plt.cm.get_cmap(cmap)(hueij)
-            facecolor = tuple(list(hueij)[:3] + [0.4])
-            edgecolor = tuple(list(hueij)[:3] + [0.9])
+            facecolor = tuple(list(hueij)[:3] + [0.7])
+            edgecolor = tuple(list(hueij)[:3] + [0.95])
             poly = plt.Polygon(
                 hull,
                 facecolor=facecolor,
@@ -90,8 +96,12 @@ def embedding(
                 color='black' if norm < 0.6 else 'white',
             )
 
-        feature = features[i]
         ax.set_title(feature)
+
+    if len(axs) > len(features):
+        for i in range(len(features), len(axs)):
+            axs[i].set_visible(False)
+
     fig.tight_layout()
 
     return axs

@@ -8,7 +8,7 @@ Approximate any single cell data set, saving >99% of memory and runtime.
 ```python
 import scquill
 
-q = Quill(
+q = scquill.Compressor(
     filename='myscdata.h5ad',
     output_filename='myapprox.h5',
     celltype_column="cell_annotation",
@@ -17,12 +17,30 @@ q = Quill(
 q()
 ```
 
-**Steps:**
-- Load dataset if necessary
-- Preprocess
-- Compress
-- Store to output file
-- (TODO): Provide an interface to explore approximations.
+## Exploring an approximation
+To load an approximation:
+```
+import scquill
+
+app = scquill.ApproxAnnData(
+    filename='myapprox.h5',
+)
+```
+
+To show a neighborhood plot:
+```
+scquill.pl.neighborhoodplot(app, ['gene1', 'gene2', 'gene3'])
+```
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/neighborhoodplot.png" width="350">
+
+To show embeddings of cell neighborhoods, similar to single-cell UMAPs:
+
+```
+scquill.pl.embedding(app, ['gene1', 'gene2', 'gene3'])
+```
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/embeddings.png" width="350">
+
+**MORE TO COME**
 
 ## Authors
 Fabio Zanini @[fabilab](https://fabilab.org)
