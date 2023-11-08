@@ -40,7 +40,7 @@ To show embeddings of cell neighborhoods, similar to single-cell UMAPs:
 ```
 scquill.pl.embedding(app, ['gene1', 'gene2', 'gene3'])
 ```
-<img src="https://raw.githubusercontent.com/fabilab/scquill/main/embeddings.png" width="650">
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/embeddings.png" width="750">
 
 **MORE TO COME**
 
