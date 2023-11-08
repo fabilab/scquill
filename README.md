@@ -1,3 +1,5 @@
+[![PyPI version](https://badge.fury.io/py/scquill.svg)](https://badge.fury.io/py/scquill)
+
 <img src="https://raw.githubusercontent.com/fabilab/scquill/main/logo.png" width="150" height="150">
 
 # scquill
@@ -38,7 +40,7 @@ To show embeddings of cell neighborhoods, similar to single-cell UMAPs:
 ```
 scquill.pl.embedding(app, ['gene1', 'gene2', 'gene3'])
 ```
-<img src="https://raw.githubusercontent.com/fabilab/scquill/main/embeddings.png" width="350">
+<img src="https://raw.githubusercontent.com/fabilab/scquill/main/embeddings.png" width="650">
 
 **MORE TO COME**
 
