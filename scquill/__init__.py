@@ -3,14 +3,14 @@ import importlib.metadata
 __version__ = importlib.metadata.version("scquill")
 
 from .compressor import Compressor
-from .accessor import Accessor
+from .approximation import ApproxAnnData
 
-import scquill.plot as pl
+import scquill.pl as pl
 
 
 __all__ = (
     "__version__",
     "Compressor",
-    "Accessor",
+    "ApproxAnnData",
     "pl",
 )

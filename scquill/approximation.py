@@ -3,7 +3,7 @@ import pandas as pd
 import anndata
 
 
-class Accessor:
+class ApproxAnnData:
     """Access single cell approximations."""
     def __init__(
         self,
@@ -64,10 +64,11 @@ class Accessor:
 
                 if measurement_type == "gene_expression":
                     Xfrac = neigroup['fraction'][:]
-                celltypes = neigroup['index'].asstr()[:]
+
+                celltypes = group['index'].asstr()[:]
+                obs_names = neigroup['index'].asstr()[:]
                 ncells = neigroup['cell_count'][:]
                 coords_centroid = neigroup['coords_centroid'][:]
-                obs_names = [f'neighborhood_{i+1}' for i in range(len(coords_centroid))]
                 convex_hulls = []
                 for ih in range(len(coords_centroid)):
                     convex_hulls.append(

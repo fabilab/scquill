@@ -14,6 +14,9 @@ def dotplot(
     **kwargs,
 ):
     """Make a dot plot of features x groups."""
+    if len(features) == 0:
+        return
+
     if ax is None:
         ax = plt.gca()
 
@@ -45,9 +48,10 @@ def dotplot(
         c=hue.ravel(),
         cmap=cmap,
     )
+    ax.set_xlim(-0.5, nfeatures - 0.5)
     ax.set_xticks(np.arange(nfeatures))
     ax.set_yticks(np.arange(ngroups))
-    ax.set_xticklabels(features)
+    ax.set_xticklabels(features, rotation=90)
     ax.set_yticklabels(adata.obs_names)
     ax.figure.tight_layout()
 
