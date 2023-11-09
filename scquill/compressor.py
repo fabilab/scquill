@@ -50,7 +50,7 @@ class Compressor:
         if self.output_filename:
             self.output_filename = pathlib.Path(self.output_filename)
 
-    def _guess_annotations(self):
+    def _guess_annotation_info_if_needed(self):
         if self.celltype_column is None:
             self.celltype_column = guess_celltype_column(self.adata)
         if self.celltype_order is None:
@@ -68,10 +68,11 @@ class Compressor:
             return
 
         self.adata = anndata.read_h5ad(self.filename)
-        self._guess_annotations()
 
     def preprocess(self):
         config = self.configuration
+
+        self._guess_annotation_info_if_needed()
 
         self.adata = filter_cells(self.adata, config)
 
