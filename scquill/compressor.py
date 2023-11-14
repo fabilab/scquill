@@ -25,6 +25,7 @@ class Compressor:
         output_filename=None,
         celltype_column=None,
         celltype_order=None,
+        additional_groupby_columns=tuple(),
         configuration=None,
         include_neighborhood=True,
         ):
@@ -34,6 +35,7 @@ class Compressor:
         self.output_filename = output_filename
         self.celltype_column = celltype_column
         self.celltype_order = celltype_order
+        self.additional_groupby_columns = additional_groupby_columns
         self.configuration = configuration
         self.include_neighborhood = include_neighborhood
 
@@ -53,10 +55,14 @@ class Compressor:
     def _guess_annotation_info_if_needed(self):
         if self.celltype_column is None:
             self.celltype_column = guess_celltype_column(self.adata)
+
         if self.celltype_order is None:
             self.celltype_order = guess_celltype_order(
                 self.adata, self.celltype_column,
             )
+
+        if self.additional_groupby_columns is None:
+            self.additional_groupby_columns = tuple()
 
     def load(self):
         if (self.adata is None) and (self.filename is None):
@@ -92,7 +98,7 @@ class Compressor:
         self.approximation = approximate_dataset(
             self.adata,
             self.celltype_column,
-            self.celltype_order,
+            self.additional_groupby_columns,
         )
 
     def store(self):
@@ -103,6 +109,7 @@ class Compressor:
             store_approximation(
                 self.output_filename,
                 self.approximation,
-                self.celltype_order,
+                self.celltype_column,
+                self.additional_groupby_columns,
                 config.get("measurement_type", guess_measurement_type(self.adata)),
             )

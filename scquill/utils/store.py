@@ -13,7 +13,8 @@ import scanpy as sc
 def store_approximation(
         fn_out,
         compressed_atlas,
-        celltype_order,
+        celltype_column,
+        additional_groupby_columns,
         measurement_type='gene_expression',
         compression=22,
         quantisation="chromatin_accessibility",
@@ -24,13 +25,17 @@ def store_approximation(
     Args:
         fn_out: The h5 file with the compressed atlas.
         compressed_atlas: The dict with the result.
-        celltype_order: The order of cell types.
+        groupby_order: The order of groups, typically cell types with potentially additionaal
+            metadata such as time point and disease, that constitute the biological unit of
+            approximation.
         measurement_type: What type of data this is (gene expression, chromatin accessibility, etc.).
         quantisation: If not None, average measurement is quantised with these bins.
         compression: Use zstd compression of the data arrays (avg and frac). Levels are 1-22,
             whereas 0 or False means no compression. No performace decrease is observed.
     '''
     add_kwargs = {}
+
+    groupby_columns = [celltype_column] + list(additional_groupby_columns)
 
     # Optional zstd compression using hdf5plugin
     if compression:
@@ -98,96 +103,104 @@ def store_approximation(
         if quantisation:
             me.create_dataset('quantisation', data=np.array(quantisation_array).astype('f4'))
 
-        #for groupby in ['celltype', 'celltype_dataset_timepoint']:
-        for groupby in ['celltype']:
-            group = me.create_group(groupby)
+        # Number of cells and grouping information
+        ncells = compressed_atlas['ncells']
+        groupby = me.create_group("groupby")
+        groupby.attrs['n_levels'] = len(ncells.index.names)
+        groupby_names = groupby.create_group("names")
+        groupby_types = groupby.create_group("dtypes")
+        for i, col in enumerate(ncells.index.names):
+            groupby_names.attrs[str(i)] = col
+            groupby_types.attrs[str(i)] = str(ncells.index.dtypes[i])
 
-            # Number of cells
-            ncells = compressed_atlas[groupby]['ncells']
-            group.create_dataset(
-                'cell_count', data=ncells.values, dtype='i8')
+        me.create_dataset(
+            'cell_count', data=ncells.values, dtype='i8')
 
-            # Average in a cell type
-            avg = compressed_atlas[groupby]['avg']
-            if quantisation:
-                # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
-                avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
-                            .reshape(avg.shape)
-                            .astype(avg_dtype))
-                avg = pd.DataFrame(
-                    avg_vals, columns=avg.columns, index=avg.index,
-                )
-
-            # TODO: manual chunking might increase performance a bit, the data is
-            # typically accessed only vertically (each feature its own island)
-            #if chunked:
-            #    # Chunk each feature on its own: this is perfect for ATAC-Seq 
-            #    add_kwargs['chunks'] = (1, len(features))
-
-            # Cell types
-            group.create_dataset(
-                'index', data=avg.columns.values.astype('S'))
-            group.create_dataset(
-                'average', data=avg.T.values, dtype=avg_dtype,
-                **add_kwargs,
-                **comp_kwargs,
+        # Average in a cell type
+        avg = compressed_atlas['avg']
+        if quantisation:
+            # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
+            avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
+                        .reshape(avg.shape)
+                        .astype(avg_dtype))
+            avg = pd.DataFrame(
+                avg_vals, columns=avg.columns, index=avg.index,
             )
-            if measurement_type == 'gene_expression':
-                # Fraction detected in a cell type
-                frac = compressed_atlas[groupby]['frac']
-                group.create_dataset(
-                    'fraction', data=frac.T.values, dtype='f4',
-                    **add_kwargs,
-                    **comp_kwargs,
-                )
 
-            # Local neighborhoods
-            neid = compressed_atlas[groupby]['neighborhood']
-            neigroup = group.create_group('neighborhood')
-            ncells = neid['ncells']
-            neigroup.create_dataset(
-                'cell_count', data=ncells.values, dtype='i8')
+        # TODO: manual chunking might increase performance a bit, the data is
+        # typically accessed only vertically (each feature its own island)
+        #if chunked:
+        #    # Chunk each feature on its own: this is perfect for ATAC-Seq 
+        #    add_kwargs['chunks'] = (1, len(features))
 
-            avg = neid['avg']
-            if quantisation:
-                # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
-                avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
-                            .reshape(avg.shape)
-                            .astype(avg_dtype))
-                avg = pd.DataFrame(
-                    avg_vals, columns=avg.columns, index=avg.index,
-                )
-            neigroup.create_dataset(
-                'index', data=avg.columns.values.astype('S'))
-            neigroup.create_dataset(
-                'average', data=avg.T.values, dtype=avg_dtype,
-                **add_kwargs,
-                **comp_kwargs,
-            )
-            if measurement_type == 'gene_expression':
-                # Fraction detected in a cell type
-                frac = neid['frac']
-                neigroup.create_dataset(
-                    'fraction', data=frac.T.values, dtype='f4',
-                    **add_kwargs,
-                    **comp_kwargs,
-                )
+        # Groups (cell types w/ or w/o additional metadata)
+        index_str = ncells.index.map(lambda x: '\t'.join(str(y) for y in x))
+        me.create_dataset(
+            'index', data=index_str.values.astype('S'))
 
-            # Centroid coordinates
-            coords_centroids = neid['coords_centroid']
-            neigroup.create_dataset(
-                'coords_centroid',
-                data=coords_centroids.T.values, dtype=avg_dtype,
+        # Average and fraction detected
+        me.create_dataset(
+            'average', data=avg.T.values, dtype=avg_dtype,
+            **add_kwargs,
+            **comp_kwargs,
+        )
+        if measurement_type == 'gene_expression':
+            # Fraction detected in a cell type
+            frac = compressed_atlas['frac']
+            me.create_dataset(
+                'fraction', data=frac.T.values, dtype='f4',
                 **add_kwargs,
                 **comp_kwargs,
             )
 
-            # Convex hulls
-            convex_hulls = neid['convex_hull']
-            hullgroup = neigroup.create_group('convex_hull')
-            for ih, hull in enumerate(convex_hulls):
-                hullgroup.create_dataset(
-                    str(ih), data=hull, dtype='f4',
-                    **add_kwargs,
-                    **comp_kwargs,
-                )
+        # Local neighborhoods
+        neid = compressed_atlas['neighborhood']
+        neigroup = me.create_group('neighborhood')
+        ncells = neid['ncells']
+        neigroup.create_dataset(
+            'cell_count', data=ncells.values, dtype='i8')
+
+        avg = neid['avg']
+        if quantisation:
+            # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
+            avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
+                        .reshape(avg.shape)
+                        .astype(avg_dtype))
+            avg = pd.DataFrame(
+                avg_vals, columns=avg.columns, index=avg.index,
+            )
+        # NOTE: these are just "neighborhood 0" etc. so no need for fancy joining
+        neigroup.create_dataset(
+            'index', data=avg.columns.values.astype('S'))
+        neigroup.create_dataset(
+            'average', data=avg.T.values, dtype=avg_dtype,
+            **add_kwargs,
+            **comp_kwargs,
+        )
+        if measurement_type == 'gene_expression':
+            # Fraction detected in a cell type
+            frac = neid['frac']
+            neigroup.create_dataset(
+                'fraction', data=frac.T.values, dtype='f4',
+                **add_kwargs,
+                **comp_kwargs,
+            )
+
+        # Centroid coordinates
+        coords_centroids = neid['coords_centroid']
+        neigroup.create_dataset(
+            'coords_centroid',
+            data=coords_centroids.T.values, dtype=avg_dtype,
+            **add_kwargs,
+            **comp_kwargs,
+        )
+
+        # Convex hulls
+        convex_hulls = neid['convex_hull']
+        hullgroup = neigroup.create_group('convex_hull')
+        for ih, hull in enumerate(convex_hulls):
+            hullgroup.create_dataset(
+                str(ih), data=hull, dtype='f4',
+                **add_kwargs,
+                **comp_kwargs,
+            )

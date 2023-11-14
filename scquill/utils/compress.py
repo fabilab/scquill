@@ -10,15 +10,15 @@ import scanpy as sc
 def approximate_dataset(
     adata,
     celltype_column,
-    celltype_order,
+    additional_groupby_columns=tuple(),
     measurement_type="gene_expression",
 ):
     """Compress atlas for one tissue after data is clean, normalised, and reannotated."""
     # Celltype averages
-    resd = _compress_celltype(
+    resd = _compress_average(
         adata,
         celltype_column,
-        celltype_order,
+        additional_groupby_columns,
         measurement_type,
     )
 
@@ -27,59 +27,70 @@ def approximate_dataset(
         resd['ncells'],
         adata,
         celltype_column,
-        measurement_type=measurement_type,
+        additional_groupby_columns,
+        measurement_type,
     )
 
     features = adata.var_names
     result = {
         'features': features,
-        'celltype': {
-            'ncells': resd['ncells'],
-            'avg': resd['avg'],
-            'neighborhood': neid,
-        },
+        'ncells': resd['ncells'],
+        'avg': resd['avg'],
+        'neighborhood': neid,
     }
     if measurement_type == "gene_expression":
-        result['celltype']['frac'] = resd['frac']
-        result['celltype']['neighborhood']['frac'] = neid['frac']
+        result['frac'] = resd['frac']
+        result['neighborhood']['frac'] = neid['frac']
 
     return result
 
 
-def _compress_celltype(
+def _compress_average(
     adata,
     celltype_column,
-    celltype_order,
+    additional_groupby_columns,
     measurement_type,
 ):
     """Compress at the cell type level"""
     features = adata.var_names
+    nfeatures = len(features)
+
+    groupby_columns = [celltype_column] + list(additional_groupby_columns)
+    tmp = adata.obs[groupby_columns].copy()
+    tmp['c'] = 1
+    ncells = tmp.groupby(groupby_columns).sum()['c']
+    # NOTE: make sure it's a multi-index for consistency
+    if len(groupby_columns) == 1:
+        ncells.index = pd.MultiIndex.from_arrays(
+            [ncells.index.values],
+            names=(ncells.index.name,),
+        )
+    ngroups = len(ncells)
+
     avg = pd.DataFrame(
-            np.zeros((len(features), len(celltype_order)), np.float32),
+            np.zeros((nfeatures, ngroups), np.float32),
             index=features,
-            columns=celltype_order,
+            columns=ncells.index,
             )
     if measurement_type == "gene_expression":
         frac = pd.DataFrame(
-                np.zeros((len(features), len(celltype_order)), np.float32),
+                np.zeros((nfeatures, ngroups), np.float32),
                 index=features,
-                columns=celltype_order,
+                columns=ncells.index,
                 )
-    ncells = pd.Series(
-            np.zeros(len(celltype_order), np.int64), index=celltype_order,
-            )
 
-    for celltype in celltype_order:
-        idx = adata.obs[celltype_column] == celltype
-        
-        # Number of cells
-        ncells[celltype] = idx.sum()
+    for groupid in ncells.index:
+        # Reconstruct indices of focal cells
+        idx = adata.obs[celltype_column] == groupid[0]
+        if len(groupby_columns) > 1:
+            for col, groupid_i in zip(groupby_columns[1:], groupid[1:]):
+                idx &= adata.obs[col] == groupid_i
 
-        # Average across cell type
+        # Average across group
         Xidx = adata[idx].X
-        avg[celltype] = np.asarray(Xidx.mean(axis=0))[0]
+        avg[groupid] = np.asarray(Xidx.mean(axis=0))[0]
         if measurement_type == "gene_expression":
-            frac[celltype] = np.asarray((Xidx > 0).mean(axis=0))[0]
+            frac[groupid] = np.asarray((Xidx > 0).mean(axis=0))[0]
 
     res = {
         'avg': avg,
@@ -94,8 +105,9 @@ def _compress_neighborhoods(
     ncells,
     adata,
     celltype_column,
-    max_cells_per_type=300,
+    additional_groupby_columns,
     measurement_type='gene_expression',
+    max_cells_per_type=300,
     avg_neighborhoods=3,
 ):
     """Compress local neighborhood of a single cell type."""
@@ -105,12 +117,18 @@ def _compress_neighborhoods(
 
     features = adata.var_names
 
-    celltypes = list(ncells.keys())
+    groupby_columns = list(ncells.index.names)
 
     # Subsample with some regard for cell typing
     cell_ids = []
-    for celltype, ncell in ncells.items():
-        cell_ids_ct = adata.obs_names[adata.obs[celltype_column] == celltype]
+    for groupid, ncell in ncells.items():
+        # Reconstruct indices of focal cells
+        idx = adata.obs[celltype_column] == groupid[0]
+        if len(groupby_columns) > 1:
+            for col, groupid_i in zip(groupby_columns[1:], groupid[1:]):
+                idx &= adata.obs[col] == groupid_i
+
+        cell_ids_ct = adata.obs_names[idx]
         if ncell > max_cells_per_type:
             idx_rand = np.random.choice(range(ncell), size=max_cells_per_type, replace=False)
             cell_ids_ct = cell_ids_ct[idx_rand]
@@ -152,7 +170,7 @@ def _compress_neighborhoods(
 
     # Do a global clustering, ensuring at least 3 cells
     # for each cluster so you can make convex hulls
-    for n_clusters in range(avg_neighborhoods * len(celltypes), 1, -1):
+    for n_clusters in range(avg_neighborhoods * len(ncells), 1, -1):
         kmeans = KMeans(
             n_clusters=n_clusters,
             random_state=0,
@@ -161,15 +179,23 @@ def _compress_neighborhoods(
         labels = kmeans.labels_
 
         # Book keep how many cells of each time are in each cluster
-        tmp = adata.obs[[celltype_column]].copy()
+        tmp = adata.obs[groupby_columns].copy()
         tmp['kmeans'] = labels
         tmp['c'] = 1.0
         ncells_per_label = (
-                tmp.groupby(['kmeans', celltype_column])
+                tmp.groupby(['kmeans'] + groupby_columns)
                    .size()
-                   .unstack(fill_value=0)
-                   .loc[:, celltypes])
+                   .unstack(0, fill_value=0)
+                   .T
+                   )
         del tmp
+
+        # Ensure the order is the same as the averages
+        if len(groupby_columns) == 1:
+            ncells_per_label = ncells_per_label.loc[:, ncells.index.get_level_values(0)]
+            ncells_per_label.columns = ncells.index
+        else:
+            ncells_per_label = ncells_per_label.loc[:, ncells.index]
 
         if ncells_per_label.sum(axis=1).min() >= 3:
             break

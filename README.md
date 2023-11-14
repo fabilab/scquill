@@ -26,7 +26,7 @@ To load an approximation:
 ```
 import scquill
 
-app = scquill.ApproxAnnData(
+app = scquill.Approximation(
     filename='myapprox.h5',
 )
 ```

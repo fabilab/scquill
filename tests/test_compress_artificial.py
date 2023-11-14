@@ -20,15 +20,12 @@ def test_300x500_run(shared_datadir):
     q()
     assert list(q.approximation.keys()) == [
         'features',
-        'celltype',
-    ]
-    assert sorted(list(q.approximation['celltype'].keys())) == [
-        'avg',
-        'frac',
         'ncells',
+        'avg',
         'neighborhood',
+        'frac',
     ]
-    assert sorted(list(q.approximation['celltype']['neighborhood'].keys())) == [
+    assert sorted(list(q.approximation['neighborhood'].keys())) == [
         'avg',
         'convex_hull',
         'coords_centroid',
