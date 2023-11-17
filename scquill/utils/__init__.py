@@ -21,7 +21,7 @@ from .preprocess import (
 from .compress import (
     approximate_dataset,
 )
-from .store import (
+from .io import (
     store_approximation,
 )
 from .heuristics import (
@@ -29,4 +29,7 @@ from .heuristics import (
     guess_measurement_type,
     guess_celltype_column,
     guess_celltype_order,
+)
+from .coarse_grain import (
+    coarse_grain_anndata,
 )

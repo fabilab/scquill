@@ -9,12 +9,12 @@ import pandas as pd
 import h5py
 import scanpy as sc
 
+from .types import _infer_dtype
+
 
 def store_approximation(
         fn_out,
         compressed_atlas,
-        celltype_column,
-        additional_groupby_columns,
         compression=22,
         quantisation="chromatin_accessibility",
         #chunked=True,
@@ -32,8 +32,6 @@ def store_approximation(
             whereas 0 or False means no compression. No performace decrease is observed.
     '''
     add_kwargs = {}
-
-    groupby_columns = [celltype_column] + list(additional_groupby_columns)
 
     # Optional zstd compression using hdf5plugin
     if compression:
@@ -93,7 +91,7 @@ def store_approximation(
                 avg_dtype = "f4"
                 quantisation = False
 
-            features = approximation_dict_mt['features'].tolist()
+            features = approximation_dict_mt['var_names'].tolist()
 
             # Subgroup for a specific measurement type (multi-omics will have multiple)
             me = me_all.create_group(measurement_type)
@@ -104,22 +102,22 @@ def store_approximation(
             if quantisation:
                 me.create_dataset('quantisation', data=np.array(quantisation_array).astype('f4'))
 
-            # Number of cells and grouping information
-            ncells = approximation_dict_mt['ncells']
-            groupby = me.create_group("groupby")
-            groupby.attrs['n_levels'] = len(ncells.index.names)
-            groupby_names = groupby.create_group("names")
-            groupby_types = groupby.create_group("dtypes")
-            for i, col in enumerate(ncells.index.names):
-                groupby_names.attrs[str(i)] = col
-                groupby_types.attrs[str(i)] = str(ncells.index.dtypes[i])
-
+            # Number of cells
+            ncells = approximation_dict_mt['obs']['cell_count']
             me.create_dataset(
                 'cell_count', data=ncells.values, dtype='i8')
 
-            # Group metadata
-            meta = me.create_group('obs')
+            # Grouping information and metadata
             obs = approximation_dict_mt['obs']
+            groupby_columns = obs.columns[:-1]
+            groupby = me.create_group("groupby")
+            groupby.attrs['n_levels'] = len(groupby_columns)
+            groupby_names = groupby.create_group("names")
+            groupby_types = groupby.create_group("dtypes")
+            for i, col in enumerate(groupby_columns):
+                groupby_names.attrs[str(i)] = col
+                groupby_types.attrs[str(i)] = str(obs[col].dtype)
+            meta = me.create_group('obs')
             for i, column in enumerate(obs.columns):
                 dtype_store = _infer_dtype(obs[column].dtype)
                 meta.create_dataset(
@@ -128,15 +126,12 @@ def store_approximation(
                 )
 
             # Average in a cell type
-            avg = approximation_dict_mt['avg']
+            avg = approximation_dict_mt['Xave']
             if quantisation:
                 # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
-                avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
+                avg_vals = (pd.cut(avg.ravel(), bins=bins, labels=False)
                             .reshape(avg.shape)
                             .astype(avg_dtype))
-                avg = pd.DataFrame(
-                    avg_vals, columns=avg.columns, index=avg.index,
-                )
 
             # TODO: manual chunking might increase performance a bit, the data is
             # typically accessed only vertically (each feature its own island)
@@ -145,21 +140,22 @@ def store_approximation(
             #    add_kwargs['chunks'] = (1, len(features))
 
             # Groups (cell types w/ or w/o additional metadata)
-            index_str = ncells.index.map(lambda x: '\t'.join(str(y) for y in x))
+            obs_names = approximation_dict_mt['obs_names']
             me.create_dataset(
-                'obs_names', data=index_str.values.astype('S'))
+                'obs_names', data=obs_names.values.astype('S'),
+            )
 
             # Average and fraction detected
             me.create_dataset(
-                'average', data=avg.T.values, dtype=avg_dtype,
+                'average', data=avg.T, dtype=avg_dtype,
                 **add_kwargs,
                 **comp_kwargs,
             )
             if measurement_type == 'gene_expression':
                 # Fraction detected in a cell type
-                frac = approximation_dict_mt['frac']
+                frac = approximation_dict_mt['Xfrac']
                 me.create_dataset(
-                    'fraction', data=frac.T.values, dtype='f4',
+                    'fraction', data=frac.T, dtype='f4',
                     **add_kwargs,
                     **comp_kwargs,
                 )
@@ -167,32 +163,29 @@ def store_approximation(
             # Local neighborhoods
             neid = approximation_dict_mt['neighborhood']
             neigroup = me.create_group('neighborhood')
-            ncells = neid['ncells']
+            ncells = neid['cell_count']
             neigroup.create_dataset(
-                'cell_count', data=ncells.values, dtype='i8')
+                'cell_count', data=ncells, dtype='i8')
 
-            avg = neid['avg']
+            avg = neid['Xave']
             if quantisation:
                 # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
-                avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
+                avg_vals = (pd.cut(avg.ravel(), bins=bins, labels=False)
                             .reshape(avg.shape)
                             .astype(avg_dtype))
-                avg = pd.DataFrame(
-                    avg_vals, columns=avg.columns, index=avg.index,
-                )
             # NOTE: these are just "neighborhood 0" etc. so no need for fancy joining
             neigroup.create_dataset(
-                'obs_names', data=avg.columns.values.astype('S'))
+                'obs_names', data=neid['obs_names'].astype('S'))
             neigroup.create_dataset(
-                'average', data=avg.T.values, dtype=avg_dtype,
+                'average', data=avg.T, dtype=avg_dtype,
                 **add_kwargs,
                 **comp_kwargs,
             )
             if measurement_type == 'gene_expression':
                 # Fraction detected in a cell type
-                frac = neid['frac']
+                frac = neid['Xfrac']
                 neigroup.create_dataset(
-                    'fraction', data=frac.T.values, dtype='f4',
+                    'fraction', data=frac.T, dtype='f4',
                     **add_kwargs,
                     **comp_kwargs,
                 )
@@ -201,7 +194,7 @@ def store_approximation(
             coords_centroids = neid['coords_centroid']
             neigroup.create_dataset(
                 'coords_centroid',
-                data=coords_centroids.T.values, dtype=avg_dtype,
+                data=coords_centroids.T, dtype=avg_dtype,
                 **add_kwargs,
                 **comp_kwargs,
             )
@@ -216,15 +209,3 @@ def store_approximation(
                     **comp_kwargs,
                 )
 
-def _infer_dtype(dtype):
-    if str(dtype) == 'object':
-        return 'S'
-    if str(dtype).startswith('S'):
-        return 'S'
-    if str(dtype).startswith('U'):
-        return 'S'
-    # FIXME: improve this
-    if str(dtype) == 'category':
-        return 'S'
-
-    return dtype

@@ -40,11 +40,14 @@ class Compressor:
         self.include_neighborhood = include_neighborhood
 
     def __call__(self):
+        self.prepare()
+        self.compress()
+        self.store()
+
+    def prepare(self):
         self._validate_constructor()
         self.load()
         self.preprocess()
-        self.compress()
-        self.store()
 
     def _validate_constructor(self):
         self.configuration = self.configuration or {}
@@ -63,6 +66,19 @@ class Compressor:
 
         if self.additional_groupby_columns is None:
             self.additional_groupby_columns = tuple()
+
+    @property
+    def additional_groupby_columns(self):
+        return self._additonal_groupby_columns
+
+    @additional_groupby_columns.setter
+    def additional_groupby_columns(self, value):
+        value = tuple(value)
+        if self.celltype_column in value:
+            raise ValueError(
+                'The cell type column cannot also be an additional column',
+            )
+        self._additonal_groupby_columns = value
 
     def load(self):
         if (self.adata is None) and (self.filename is None):
@@ -109,6 +125,4 @@ class Compressor:
             store_approximation(
                 self.output_filename,
                 self.approximation,
-                self.celltype_column,
-                self.additional_groupby_columns,
             )

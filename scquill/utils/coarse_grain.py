@@ -1,3 +1,5 @@
+import numpy as np
+
 # FIXME FIXME
 def coarse_grain_anndata(adata, groupby):
     """Coarse grain an approximation further to broader grouping."""
@@ -60,9 +62,9 @@ def coarse_grain_anndata(adata, groupby):
         # the layers (e.g. avg and fractions)
         ncells_with_meta = adata.obs[list(groupby_original) + ['cell_count']].copy()
         # FIXME: this probably needs more work
-        ncells_cg = ncells_with_meta.groupby(indices_groupby).sum()
+        ncells_cg = ncells_with_meta.groupby(groupby).sum('cell_count')
         new_order = np.asarray(
-            ['\t'.join(x) for x in ncells_cg.index],
+            ['\t'.join(str(x)) for x in ncells_cg.index],
         )
 
         X = np.zeros((len(new_order), adata.X.shape[1]), adata.X.dtype)
@@ -77,7 +79,7 @@ def coarse_grain_anndata(adata, groupby):
                 for j in range(1, len(groupid)):
                     idx &= ncells_with_meta[groupby[j]] == groupid[j]
             idx = idx.values.nonzero()[0]
-            X[i] = (X[idx] * ncells_with_meta.iloc[idx]).sum(axis=0) / ncells_cg.iloc[i]
+            X[i] = (X[idx] * ncells_with_meta.iloc[idx].values).sum(axis=0) / ncells_cg.iloc[i]
             if adata.layers:
                 for key in layers:
                     Xl = adata.layers[key]

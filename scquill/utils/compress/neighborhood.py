@@ -1,119 +1,14 @@
-'''
-Utility functions for the compression
-'''
+"""Compress single cell data using embedding neighborhoods."""
+
 import gc
 import numpy as np
 import pandas as pd
 import scanpy as sc
 
 
-def approximate_dataset(
+def _compress_neighborhood(
     adata,
-    celltype_column,
-    additional_groupby_columns=tuple(),
-    measurement_type="gene_expression",
-):
-    """Compress atlas for one tissue after data is clean, normalised, and reannotated."""
-    # Celltype averages
-    resd = _compress_average(
-        adata,
-        celltype_column,
-        additional_groupby_columns,
-        measurement_type,
-    )
-
-    # Local neighborhoods
-    neid = _compress_neighborhoods(
-        resd['ncells'],
-        adata,
-        celltype_column,
-        additional_groupby_columns,
-        measurement_type,
-    )
-
-    features = adata.var_names
-    result = {
-        'features': features,
-        'ncells': resd['ncells'],
-        'avg': resd['avg'],
-        'obs': resd['obs'],
-        'neighborhood': neid,
-    }
-    if measurement_type == "gene_expression":
-        result['frac'] = resd['frac']
-        result['neighborhood']['frac'] = neid['frac']
-
-    compressed_atlas = {
-        measurement_type: result,
-    }
-
-    return compressed_atlas
-
-
-def _compress_average(
-    adata,
-    celltype_column,
-    additional_groupby_columns,
-    measurement_type,
-):
-    """Compress at the cell type level"""
-    features = adata.var_names
-    nfeatures = len(features)
-
-    groupby_columns = [celltype_column] + list(additional_groupby_columns)
-    tmp = adata.obs[groupby_columns].copy()
-    tmp['c'] = 1
-    ncells = tmp.groupby(groupby_columns).sum()['c']
-    # NOTE: make sure it's a multi-index for consistency
-    if len(groupby_columns) == 1:
-        ncells.index = pd.MultiIndex.from_arrays(
-            [ncells.index.values],
-            names=(ncells.index.name,),
-        )
-    ngroups = len(ncells)
-
-    # Metadata for groups
-    obs = ncells.index.to_frame()
-    obs.index = ncells.index
-
-    avg = pd.DataFrame(
-            np.zeros((nfeatures, ngroups), np.float32),
-            index=features,
-            columns=ncells.index,
-            )
-    if measurement_type == "gene_expression":
-        frac = pd.DataFrame(
-                np.zeros((nfeatures, ngroups), np.float32),
-                index=features,
-                columns=ncells.index,
-                )
-
-    for groupid in ncells.index:
-        # Reconstruct indices of focal cells
-        idx = adata.obs[celltype_column] == groupid[0]
-        if len(groupby_columns) > 1:
-            for col, groupid_i in zip(groupby_columns[1:], groupid[1:]):
-                idx &= adata.obs[col] == groupid_i
-
-        # Average across group
-        Xidx = adata[idx].X
-        avg[groupid] = np.asarray(Xidx.mean(axis=0))[0]
-        if measurement_type == "gene_expression":
-            frac[groupid] = np.asarray((Xidx > 0).mean(axis=0))[0]
-
-    res = {
-        'avg': avg,
-        'obs': obs,
-        'ncells': ncells,
-    }
-    if measurement_type == "gene_expression":
-        res['frac'] = frac
-    return res
-
-
-def _compress_neighborhoods(
-    ncells,
-    adata,
+    obs_bio,
     celltype_column,
     additional_groupby_columns,
     measurement_type='gene_expression',
@@ -127,18 +22,21 @@ def _compress_neighborhoods(
 
     features = adata.var_names
 
-    groupby_columns = list(ncells.index.names)
+    groupby_columns = [celltype_column] + list(additional_groupby_columns)
 
     # Subsample with some regard for cell typing
+    # NOTE: this can be debated, but is also designed to get rid of "outlier cells"
+    # which are the opposite of an approximation in a sense
     cell_ids = []
-    for groupid, ncell in ncells.items():
+    idx = np.zeros(adata.n_obs, bool)
+    for _, row in obs_bio.iterrows():
         # Reconstruct indices of focal cells
-        idx = adata.obs[celltype_column] == groupid[0]
-        if len(groupby_columns) > 1:
-            for col, groupid_i in zip(groupby_columns[1:], groupid[1:]):
-                idx &= adata.obs[col] == groupid_i
+        idx[:] = True
+        for col in groupby_columns:
+            idx &= (adata.obs[col] == row[col])
 
         cell_ids_ct = adata.obs_names[idx]
+        ncell = row['cell_count']
         if ncell > max_cells_per_type:
             idx_rand = np.random.choice(range(ncell), size=max_cells_per_type, replace=False)
             cell_ids_ct = cell_ids_ct[idx_rand]
@@ -180,7 +78,11 @@ def _compress_neighborhoods(
 
     # Do a global clustering, ensuring at least 3 cells
     # for each cluster so you can make convex hulls
-    for n_clusters in range(avg_neighborhoods * len(ncells), 1, -1):
+    if len(groupby_columns) > 1:
+        row_order = pd.MultiIndex.from_frame(obs_bio[groupby_columns])
+    else:
+        row_order = pd.Index(obs_bio[groupby_columns[0]])
+    for n_clusters in range(avg_neighborhoods * len(obs_bio), 1, -1):
         kmeans = KMeans(
             n_clusters=n_clusters,
             random_state=0,
@@ -193,7 +95,7 @@ def _compress_neighborhoods(
         tmp['kmeans'] = labels
         tmp['c'] = 1.0
         ncells_per_label = (
-                tmp.groupby(['kmeans'] + groupby_columns)
+                tmp.groupby(['kmeans'] + groupby_columns, observed=False)
                    .size()
                    .unstack(0, fill_value=0)
                    .T
@@ -201,11 +103,7 @@ def _compress_neighborhoods(
         del tmp
 
         # Ensure the order is the same as the averages
-        if len(groupby_columns) == 1:
-            ncells_per_label = ncells_per_label.loc[:, ncells.index.get_level_values(0)]
-            ncells_per_label.columns = ncells.index
-        else:
-            ncells_per_label = ncells_per_label.loc[:, ncells.index]
+        ncells_per_label = ncells_per_label.loc[:, row_order]
 
         if ncells_per_label.sum(axis=1).min() >= 3:
             break
@@ -244,6 +142,11 @@ def _compress_neighborhoods(
         hull = ConvexHull(points_i)
         convex_hulls.append(points_i[hull.vertices])
 
+    # TODO: Approximate vector field for velocity in this embedding if available.
+    # If not, we cannot recount the matrix outselves but if they layers are present,
+    # we could recompute it and splash it onto our embedding, THEN recycle the arrow
+    # flow algo from mpl to approximate
+
     # Clean up
     del adata
     gc.collect()
@@ -254,12 +157,14 @@ def _compress_neighborhoods(
         nei_frac.columns = ncells_per_label.index
 
     neid = {
-        'ncells': ncells_per_label,
-        'avg': nei_avg,
-        'coords_centroid': nei_coords,
+        'obs_names': nei_avg.index.values,
+        'cell_count': ncells_per_label.values,
+        'coords_centroid': nei_coords.values,
         'convex_hull': convex_hulls,
+        'Xave': nei_avg.values,
     }
     if measurement_type == "gene_expression":
-        neid['frac'] = nei_frac
+        neid['Xfrac'] = nei_frac.values
 
     return neid
+
