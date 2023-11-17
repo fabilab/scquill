@@ -18,7 +18,10 @@ def test_300x500_run(shared_datadir):
         include_neighborhood=True,
     )
     q()
-    assert list(q.approximation.keys()) == [
+
+    assert list(q.approximation.keys()) == ['gene_expression']
+    approximation = q.approximation['gene_expression']
+    assert list(approximation.keys()) == [
         'features',
         'ncells',
         'avg',
@@ -26,7 +29,7 @@ def test_300x500_run(shared_datadir):
         'neighborhood',
         'frac',
     ]
-    assert sorted(list(q.approximation['neighborhood'].keys())) == [
+    assert sorted(list(approximation['neighborhood'].keys())) == [
         'avg',
         'convex_hull',
         'coords_centroid',

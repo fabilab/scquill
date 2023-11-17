@@ -111,5 +111,4 @@ class Compressor:
                 self.approximation,
                 self.celltype_column,
                 self.additional_groupby_columns,
-                config.get("measurement_type", guess_measurement_type(self.adata)),
             )
