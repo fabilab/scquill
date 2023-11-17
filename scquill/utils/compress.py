@@ -36,13 +36,18 @@ def approximate_dataset(
         'features': features,
         'ncells': resd['ncells'],
         'avg': resd['avg'],
+        'obs': resd['obs'],
         'neighborhood': neid,
     }
     if measurement_type == "gene_expression":
         result['frac'] = resd['frac']
         result['neighborhood']['frac'] = neid['frac']
 
-    return result
+    compressed_atlas = {
+        measurement_type: result,
+    }
+
+    return compressed_atlas
 
 
 def _compress_average(
@@ -66,6 +71,10 @@ def _compress_average(
             names=(ncells.index.name,),
         )
     ngroups = len(ncells)
+
+    # Metadata for groups
+    obs = ncells.index.to_frame()
+    obs.index = ncells.index
 
     avg = pd.DataFrame(
             np.zeros((nfeatures, ngroups), np.float32),
@@ -94,6 +103,7 @@ def _compress_average(
 
     res = {
         'avg': avg,
+        'obs': obs,
         'ncells': ncells,
     }
     if measurement_type == "gene_expression":

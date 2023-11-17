@@ -2,15 +2,29 @@ import h5py
 import pandas as pd
 import anndata
 
+from .utils.coarse_grain import coarse_grain_anndata
+
 
 class Approximation:
     """Access single cell approximations."""
     def __init__(
         self,
-        filename,
     ):
-        self.filename = filename
         self._adata_dict = {}
+
+    def read_h5(
+        self, filename,
+    ):
+    """Lazy reader of approximation from file."""
+    self.approximation_dict = None
+    self.filename = filename
+
+    def read_approximation_dict(
+        self, approximation_dict,
+    ):
+    """Lazy reader of approximation from dict."""
+    self.filename = None
+    self.approximation_dict = approximation_dict
 
     def _infer_measurement_type(self, h5_data):
         measurement_types = list(h5_data['measurements'])
@@ -23,10 +37,28 @@ class Approximation:
                 "Multiple measurement types found: {measurement_types}"
             )
 
-    def _to_adata(
+
+    def _to_anndata(
         self,
         neighborhood=False,
         measurement_type=None,
+    ):
+        if self.approximation_dict:
+            adata = self._appdict_to_anndata(
+                neighborhood=neighborhood,
+                measurement_type=measurement_type,
+            )
+        else:
+            adata = self._h5file_to_anndata(
+                neighborhood=neighborhood,
+                measurement_type=measurement_type,
+            )
+        self._adata_dict[(measurement_type, groupby, neighborhood)] = adata
+
+    def _h5file_to_anndata(
+        self,
+        neighborhood,
+        measurement_type,
     ):
         """Get an AnnData object in which each observation is an average."""
         with h5py.File(self.filename) as h5_data:
@@ -60,15 +92,12 @@ class Approximation:
             for i in range(n_levels):
                 groupby_names.append(me['groupby']['names'].attrs[str(i)])
                 groupby_dtypes.append(me['groupby']['dtypes'].attrs[str(i)])
-            groupby = '>'.join(groupby_names)
+            groupby = '\t'.join(groupby_names)
 
             if neighborhood:
                 neigroup = me['neighborhood']
                 Xave = neigroup['average'][:]
                 # TODO: quantisation
-
-                if measurement_type == "gene_expression":
-                    Xfrac = neigroup['fraction'][:]
 
                 groupby_order = me['index'].asstr()[:]
                 obs_names = neigroup['index'].asstr()[:]
@@ -81,6 +110,7 @@ class Approximation:
                     )
 
                 if measurement_type == "gene_expression":
+                    Xfrac = neigroup['fraction'][:]
                     adata = anndata.AnnData(
                         X=Xave,
                         layers={
@@ -91,13 +121,15 @@ class Approximation:
                 else:
                     adata = anndata.AnnData(X=Xave)
 
-                adata.obs_names = pd.Index(obs_names, name='neighborhoods')
-                adata.var_names = pd.Index(var_names, name='features')
                 adata.obsm['X_ncells'] = ncells
                 adata.obsm['X_umap'] = coords_centroid
 
                 # TODO: Make a multiindex if needed
                 adata.uns['convex_hulls'] = convex_hulls
+
+                adata.obs['cell_count'] = ncells
+                adata.obs_names = pd.Index(obs_names, name='neighborhoods')
+                adata.var_names = pd.Index(var_names, name='features')
 
             else:
                 Xave = me['average'][:]
@@ -106,27 +138,33 @@ class Approximation:
                 if measurement_type == "gene_expression":
                     Xfrac = me['fraction'][:]
                 obs_names = me['index'].asstr()[:]
+                # Add obs metadata
                 ncells = me['cell_count'][:]
+                obs = pd.DataFrame([], index=obs_names)
+                for column, dtype in zip(groupby_names, groupby_dtypes):
+                    if _infer_dtype(dtype) == 'S':
+                        obs[column] = me['obs'][column].asstr()[:]
+                    else:
+                        obs[column] = me['obs'][column][:]
+                obs['cell_count'] = ncells
 
                 if measurement_type == "gene_expression":
                     adata = anndata.AnnData(
                         X=Xave,
+                        obs=obs,
                         layers={
                             'average': Xave,
                             'fraction': Xfrac,
                         }
                     )
                 else:
-                    adata = anndata.AnnData(X=Xave)
+                    adata = anndata.AnnData(
+                        X=Xave,
+                        obs=obs,
+                    )
 
                 adata.var_names = pd.Index(var_names, name='features')
                 adata.obs_names = pd.Index(obs_names, name=groupby)
-                # Add obs metadata
-                adata.obs['cell_count'] = ncells
-                multiindex = adata.obs_names.str.split('\t', expand=True).to_frame()
-                multiindex.columns = groupby_names
-                for name in groupby_names:
-                    adata.obs[name] = multiindex[name]
 
         adata.uns['approximation_groupby'] = {
             'names': groupby_names,
@@ -135,9 +173,85 @@ class Approximation:
         if neighborhood:
             adata.uns['approximation_groupby']['order'] = groupby_order
 
-        self._adata_dict[(measurement_type, groupby, neighborhood)] = adata
+        return adata
 
-    def to_adata(
+    def _appdict_to_anndata(
+        neighborhood,
+        measurement_type,
+    ):
+        compressed_atlas = self.approximation_dict
+
+        if measurement_type is None:
+            if len(compressed_atlas.keys()) == 1:
+                measurement_type = list(compressed_atlas.keys())[0]
+            else:
+                raise ValueError(
+                    "Multiple measurement types detected, which one would you like to look at?",
+                )
+        
+        resd = compressed_atlas[measurement_type]
+        var_names = resd['features']
+
+        if neighborhood:
+            neid = resd['neighborhood']
+            Xave = neid['avg'].values
+            obs_names = neid['avg'].index.values
+            
+            if measurement_type == "gene_expression":
+                Xfrac = neid['frac'].values
+                adata = anndata.AnnData(
+                    X=Xave,
+                    layers={
+                        'average': Xave,
+                        'fraction': Xfrac,
+                    }
+                )
+            else:
+                adata = anndata.AnnData(X=Xave)
+
+            adata.obs['cell_count'] = neid['ncells']
+            adata.obsm['X_ncells'] = neid['ncells']
+            adata.obsm['X_umap'] = neid['coords_centroid']
+            adata.uns['convex_hulls'] = neid['convex_hull']
+            adata.obs_names = pd.Index(obs_names, name='neighborhoods')
+            adata.var_names = pd.Index(var_names, name='features')
+
+        else:
+            Xave = resd['avg'].values
+            if measurement_type == "gene_expression":
+                Xfrac = resd['frac'].values
+                adata = anndata.AnnData(
+                    X=Xave,
+                    layers={
+                        'average': Xave,
+                        'fraction': Xfrac,
+                    }
+                )
+            else:
+                adata = anndata.AnnData(
+                    X=Xave,
+                )
+
+            groupby_names = resd['avg'].index.names
+            groupby = '\t'.join(groupby_names)
+            obs_names = resd['avg'].index.map(lambda x: '\t'.join(str(y) for y in x))
+            obs = resd['obs'].copy()
+            obs['cell_count'] = resd['ncells']
+            obs.index = obs_names
+            adata.obs = obs
+            adata.var_names = pd.Index(var_names, name='features')
+            adata.obs_names = pd.Index(obs_names, name=groupby)
+
+        adata.uns['approximation_groupby'] = {
+            'names': groupby_names,
+            'dtypes': groupby_dtypes,
+        }
+        if neighborhood:
+            adata.uns['approximation_groupby']['order'] = resd['avg'].index.values
+
+        return adata
+
+    def to_anndata(
         self,
         groupby='celltype',
         neighborhood=False,
@@ -149,7 +263,7 @@ class Approximation:
                 measurement_type = self._infer_measurement_type(h5_data)
 
         if (measurement_type, groupby, neighborhood) not in self._adata_dict:
-            self._to_adata(
+            self._to_anndata(
                 neighborhood=neighborhood,
                 measurement_type=measurement_type,
             )
@@ -158,115 +272,5 @@ class Approximation:
         adata = self._adata_dict[(measurement_type, groupby, neighborhood)]
 
         # Coarse grain result if the approximation includes unnecessary metadata
-        adata_cg = coarse_grain(adata, groupby)
+        adata_cg = coarse_grain_anndata(adata, groupby)
         return adata_cg
-
-
-def coarse_grain(adata, groupby):
-    """Coarse grain an approximation further to broader grouping."""
-
-    if 'approximation_groupby' not in adata.uns:
-        raise KeyError(
-            "missing .uns['approximation_groupby'] information, this does not look like an approximation",
-        )
-
-    if isinstance(groupby, str):
-        groupby = [groupby]
-
-    groupby = list(groupby)
-    if len(groupby) == 0:
-        raise ValueError(
-            'groupby must be a sequence with at least one element',
-        )
-
-    groupby_original = list(adata.uns['approximation_groupby']['names'])
-    for column in groupby:
-        if column not in groupby_original:
-            raise ValueError(
-                f"Grouping not found in approximation: {column}",
-            )
-
-    # Trivial case
-    if len(groupby_original) == 1:
-        return adata.copy()
-
-    indices_groupby = [groupby_original.index(gb) for gb in groupby]
-
-    # Detect neighborhood
-    neighborhood = 'X_ncells' in adata.obsm
-    if neighborhood:
-        # We only have to touch the X_ncells, the rest is grouping agnostic
-        multiindex = (pd.Index(adata.uns['approximation_groupby']['order'])
-                        .str
-                        .split('\t', expand=True))
-        multiindex.names = groupby_names
-        ncells = pd.DataFrame(
-            adata.obsm['X_ncells'],
-            index=multiindex,
-        )
-        # FIXME: this probably needs more work
-        ncells_cg = ncells.groupby(level=indices_groupby).sum()
-        new_order = np.asarray(
-            ['\t'.join(x) for x in ncells_cg.index],
-        )
-
-        adata_cg = adata.copy()
-        adata_cg.obsm['X_ncells'] = ncells_cs.values
-        adata_cg.uns['approximation_groupby'] = {
-            'names': groupby,
-            'dtypes': [adata.uns['approximation_groupby']['dtypes'][i] for i in indices_groupby],
-            'order': new_order,
-        }
-
-    else:
-        # If not neighborhood, we have to actually change the matrix X and, if present,
-        # the layers (e.g. avg and fractions)
-        ncells_with_meta = adata.obs[list(groupby_original) + ['cell_count']].copy()
-        # FIXME: this probably needs more work
-        ncells_cg = ncells_with_meta.groupby(indices_groupby).sum()
-        new_order = np.asarray(
-            ['\t'.join(x) for x in ncells_cg.index],
-        )
-
-        X = np.zeros((len(new_order), adata.X.shape[1]), adata.X.dtype)
-        if adata.layers:
-            layers = {
-                key: np.zeros((len(new_order), layer.shape[1]), layer.dtype) for key, layer in adata.layers.items()
-            }
-        for i in range(len(new_order)):
-            groupid = ncells_cg.index[i]
-            idx = ncells_with_meta[groupby[0]] == groupid[0]
-            if len(groupid) > 1:
-                for j in range(1, len(groupid)):
-                    idx &= ncells_with_meta[groupby[j]] == groupid[j]
-            idx = idx.values.nonzero()[0]
-            X[i] = (X[idx] * ncells_with_meta.iloc[idx]).sum(axis=0) / ncells_cg.iloc[i]
-            if adata.layers:
-                for key in layers:
-                    Xl = adata.layers[key]
-                    layers[key][i] = (Xl[idx] * ncells_with_meta.iloc[idx]).sum(axis=0) / ncells_cg.iloc[i]
-
-        if adata.layers:
-            adata_cg = anndata.AnnData(
-                X=X,
-                var=adata.var.copy(),
-            )
-        else:
-            adata_cg = anndata.AnnData(
-                X=X,
-                layers=layers,
-                var=adata.var.copy(),
-            )
-
-        # Obs names and metadata
-        adata_cg.obs_names = new_order
-        adata_cg.obs['cell_count'] = ncells_cg.values
-        for gb in groupby:
-            adata_cg.obs[gb] = ncells_cg.index.get_level_values(gb)
-
-        adata_cg.uns['approximation_groupby'] = {
-            'names': groupby,
-            'dtypes': [adata.uns['approximation_groupby']['dtypes'][i] for i in indices_groupby],
-        }
-
-    return adata_cg

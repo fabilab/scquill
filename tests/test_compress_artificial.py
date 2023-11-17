@@ -22,6 +22,7 @@ def test_300x500_run(shared_datadir):
         'features',
         'ncells',
         'avg',
+        'obs',
         'neighborhood',
         'frac',
     ]
