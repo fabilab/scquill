@@ -12,19 +12,25 @@ class Approximation:
     ):
         self._adata_dict = {}
 
+    @classmethod
     def read_h5(
-        self, filename,
+        cls, filename,
     ):
         """Lazy reader of approximation from file."""
+        self = cls()
         self.approximation_dict = None
         self.filename = filename
+        return self
 
+    @classmethod
     def read_approximation_dict(
-        self, approximation_dict,
+        cls, approximation_dict,
     ):
         """Lazy reader of approximation from dict."""
+        self = cls()
         self.filename = None
         self.approximation_dict = approximation_dict
+        return self
 
     def _infer_measurement_type(self, h5_data):
         measurement_types = list(h5_data['measurements'])
