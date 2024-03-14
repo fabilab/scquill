@@ -18,17 +18,18 @@ def test_300x500_run(shared_datadir):
         include_neighborhood=True,
     )
     q()
-    assert list(q.approximation.keys()) == [
+
+    assert list(q.approximation.keys()) == ['gene_expression']
+    approximation = q.approximation['gene_expression']
+    assert list(approximation.keys()) == [
         'features',
-        'celltype',
-    ]
-    assert sorted(list(q.approximation['celltype'].keys())) == [
-        'avg',
-        'frac',
         'ncells',
+        'avg',
+        'obs',
         'neighborhood',
+        'frac',
     ]
-    assert sorted(list(q.approximation['celltype']['neighborhood'].keys())) == [
+    assert sorted(list(approximation['neighborhood'].keys())) == [
         'avg',
         'convex_hull',
         'coords_centroid',

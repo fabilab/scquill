@@ -13,8 +13,8 @@ import scanpy as sc
 def store_approximation(
         fn_out,
         compressed_atlas,
-        celltype_order,
-        measurement_type='gene_expression',
+        celltype_column,
+        additional_groupby_columns,
         compression=22,
         quantisation="chromatin_accessibility",
         #chunked=True,
@@ -24,13 +24,16 @@ def store_approximation(
     Args:
         fn_out: The h5 file with the compressed atlas.
         compressed_atlas: The dict with the result.
-        celltype_order: The order of cell types.
-        measurement_type: What type of data this is (gene expression, chromatin accessibility, etc.).
+        groupby_order: The order of groups, typically cell types with potentially additionaal
+            metadata such as time point and disease, that constitute the biological unit of
+            approximation.
         quantisation: If not None, average measurement is quantised with these bins.
         compression: Use zstd compression of the data arrays (avg and frac). Levels are 1-22,
             whereas 0 or False means no compression. No performace decrease is observed.
     '''
     add_kwargs = {}
+
+    groupby_columns = [celltype_column] + list(additional_groupby_columns)
 
     # Optional zstd compression using hdf5plugin
     if compression:
@@ -51,36 +54,6 @@ def store_approximation(
     else:
         comp_kwargs = {}
 
-    # Data can be quantised for further compression (typically ATAC-Seq)
-    if (quantisation == True) or (quantisation == measurement_type):
-        if measurement_type == "chromatin_accessibility":
-            # NOTE: tried using quantiles for this, but they are really messy
-            # and subject to aliasing effects. 8 bits are more than enough for
-            # most biological questions given the noise in the data
-            qbits = 8
-            bins = np.array([-0.001, 1e-8] + np.logspace(-4, 0, 2**qbits - 1).tolist()[:-1] + [1.1])
-            # bin "centers", aka data quantisation
-        elif measurement_type == "gene_expression":
-            # Counts per ten thousand quantisation
-            qbits = 16
-            bins = np.array([-0.001, 1e-8] + np.logspace(-2, 4, 2**qbits - 1).tolist()[:-1] + [1.1e4])
-        else:
-            raise ValueError(f"Quantisation for {measurement_type} not set.")
-
-        quantisation_array = [0] + np.sqrt(bins[1:-2] * bins[2:-1]).tolist() + [1]
-
-        qbytes = qbits // 8
-        # Add a byte if the quantisation is not optimal
-        if qbits not in (8, 16, 32, 64):
-            qbytes += 1
-        avg_dtype = f"u{qbytes}"
-        quantisation = True
-    else:
-        avg_dtype = "f4"
-        quantisation = False
-
-    features = compressed_atlas['features'].tolist()
-
     with h5py.File(fn_out, 'a') as h5_data:
         # Version
         import scquill
@@ -89,26 +62,73 @@ def store_approximation(
         # Umbrella group for measurments (not metadata)
         me_all = h5_data.create_group('measurements')
 
-        # Subgroup for a specific measurement type (multi-omics will have multiple)
-        me = me_all.create_group(measurement_type)
+        for measurement_type, approximation_dict_mt in compressed_atlas.items():
+
+            # TODO: move the quantisation bit somewhere else
+            # Data can be quantised for further compression (typically ATAC-Seq)
+            if (quantisation == True) or (quantisation == measurement_type):
+                if measurement_type == "chromatin_accessibility":
+                    # NOTE: tried using quantiles for this, but they are really messy
+                    # and subject to aliasing effects. 8 bits are more than enough for
+                    # most biological questions given the noise in the data
+                    qbits = 8
+                    bins = np.array([-0.001, 1e-8] + np.logspace(-4, 0, 2**qbits - 1).tolist()[:-1] + [1.1])
+                    # bin "centers", aka data quantisation
+                elif measurement_type == "gene_expression":
+                    # Counts per ten thousand quantisation
+                    qbits = 16
+                    bins = np.array([-0.001, 1e-8] + np.logspace(-2, 4, 2**qbits - 1).tolist()[:-1] + [1.1e4])
+                else:
+                    raise ValueError(f"Quantisation for {measurement_type} not set.")
+
+                quantisation_array = [0] + np.sqrt(bins[1:-2] * bins[2:-1]).tolist() + [1]
+
+                qbytes = qbits // 8
+                # Add a byte if the quantisation is not optimal
+                if qbits not in (8, 16, 32, 64):
+                    qbytes += 1
+                avg_dtype = f"u{qbytes}"
+                quantisation = True
+            else:
+                avg_dtype = "f4"
+                quantisation = False
+
+            features = approximation_dict_mt['features'].tolist()
+
+            # Subgroup for a specific measurement type (multi-omics will have multiple)
+            me = me_all.create_group(measurement_type)
     
-        me.attrs['compression'] = compression
+            me.attrs['compression'] = compression
 
-        me.create_dataset('features', data=np.array(features).astype('S'))
-        if quantisation:
-            me.create_dataset('quantisation', data=np.array(quantisation_array).astype('f4'))
+            me.create_dataset('var_names', data=np.array(features).astype('S'))
+            if quantisation:
+                me.create_dataset('quantisation', data=np.array(quantisation_array).astype('f4'))
 
-        #for groupby in ['celltype', 'celltype_dataset_timepoint']:
-        for groupby in ['celltype']:
-            group = me.create_group(groupby)
+            # Number of cells and grouping information
+            ncells = approximation_dict_mt['ncells']
+            groupby = me.create_group("groupby")
+            groupby.attrs['n_levels'] = len(ncells.index.names)
+            groupby_names = groupby.create_group("names")
+            groupby_types = groupby.create_group("dtypes")
+            for i, col in enumerate(ncells.index.names):
+                groupby_names.attrs[str(i)] = col
+                groupby_types.attrs[str(i)] = str(ncells.index.dtypes[i])
 
-            # Number of cells
-            ncells = compressed_atlas[groupby]['ncells']
-            group.create_dataset(
+            me.create_dataset(
                 'cell_count', data=ncells.values, dtype='i8')
 
+            # Group metadata
+            meta = me.create_group('obs')
+            obs = approximation_dict_mt['obs']
+            for i, column in enumerate(obs.columns):
+                dtype_store = _infer_dtype(obs[column].dtype)
+                meta.create_dataset(
+                    column,
+                    data=obs[column].values.astype(dtype_store),
+                )
+
             # Average in a cell type
-            avg = compressed_atlas[groupby]['avg']
+            avg = approximation_dict_mt['avg']
             if quantisation:
                 # pd.cut wants one dimensional arrays so we ravel -> cut -> reshape
                 avg_vals = (pd.cut(avg.values.ravel(), bins=bins, labels=False)
@@ -124,26 +144,29 @@ def store_approximation(
             #    # Chunk each feature on its own: this is perfect for ATAC-Seq 
             #    add_kwargs['chunks'] = (1, len(features))
 
-            # Cell types
-            group.create_dataset(
-                'index', data=avg.columns.values.astype('S'))
-            group.create_dataset(
+            # Groups (cell types w/ or w/o additional metadata)
+            index_str = ncells.index.map(lambda x: '\t'.join(str(y) for y in x))
+            me.create_dataset(
+                'obs_names', data=index_str.values.astype('S'))
+
+            # Average and fraction detected
+            me.create_dataset(
                 'average', data=avg.T.values, dtype=avg_dtype,
                 **add_kwargs,
                 **comp_kwargs,
             )
             if measurement_type == 'gene_expression':
                 # Fraction detected in a cell type
-                frac = compressed_atlas[groupby]['frac']
-                group.create_dataset(
+                frac = approximation_dict_mt['frac']
+                me.create_dataset(
                     'fraction', data=frac.T.values, dtype='f4',
                     **add_kwargs,
                     **comp_kwargs,
                 )
 
             # Local neighborhoods
-            neid = compressed_atlas[groupby]['neighborhood']
-            neigroup = group.create_group('neighborhood')
+            neid = approximation_dict_mt['neighborhood']
+            neigroup = me.create_group('neighborhood')
             ncells = neid['ncells']
             neigroup.create_dataset(
                 'cell_count', data=ncells.values, dtype='i8')
@@ -157,8 +180,9 @@ def store_approximation(
                 avg = pd.DataFrame(
                     avg_vals, columns=avg.columns, index=avg.index,
                 )
+            # NOTE: these are just "neighborhood 0" etc. so no need for fancy joining
             neigroup.create_dataset(
-                'index', data=avg.columns.values.astype('S'))
+                'obs_names', data=avg.columns.values.astype('S'))
             neigroup.create_dataset(
                 'average', data=avg.T.values, dtype=avg_dtype,
                 **add_kwargs,
@@ -191,3 +215,16 @@ def store_approximation(
                     **add_kwargs,
                     **comp_kwargs,
                 )
+
+def _infer_dtype(dtype):
+    if str(dtype) == 'object':
+        return 'S'
+    if str(dtype).startswith('S'):
+        return 'S'
+    if str(dtype).startswith('U'):
+        return 'S'
+    # FIXME: improve this
+    if str(dtype) == 'category':
+        return 'S'
+
+    return dtype
