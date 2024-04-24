@@ -9,10 +9,10 @@ import pandas as pd
 import h5py
 import scanpy as sc
 
-from .types import _infer_dtype
+from scquill.utils.types import _infer_dtype
 
 
-def store_approximation(
+def write_to_h5(
         fn_out,
         compressed_atlas,
         compression=22,

@@ -21,9 +21,6 @@ from .preprocess import (
 from .compress import (
     approximate_dataset,
 )
-from .io import (
-    store_approximation,
-)
 from .heuristics import (
     guess_normalisation,
     guess_measurement_type,

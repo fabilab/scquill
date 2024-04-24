@@ -1,9 +1,9 @@
 import numpy as np
+import anndata
 
-# FIXME FIXME
+
 def coarse_grain_anndata(adata, groupby):
     """Coarse grain an approximation further to broader grouping."""
-
     if 'approximation_groupby' not in adata.uns:
         raise KeyError(
             "missing .uns['approximation_groupby'] information, this does not look like an approximation",
@@ -26,7 +26,7 @@ def coarse_grain_anndata(adata, groupby):
             )
 
     # Trivial case
-    if len(groupby_original) == 1:
+    if groupby_original == groupby:
         return adata.copy()
 
     indices_groupby = [groupby_original.index(gb) for gb in groupby]
@@ -61,29 +61,33 @@ def coarse_grain_anndata(adata, groupby):
         # If not neighborhood, we have to actually change the matrix X and, if present,
         # the layers (e.g. avg and fractions)
         ncells_with_meta = adata.obs[list(groupby_original) + ['cell_count']].copy()
-        # FIXME: this probably needs more work
-        ncells_cg = ncells_with_meta.groupby(groupby).sum('cell_count')
-        new_order = np.asarray(
-            ['\t'.join(str(x)) for x in ncells_cg.index],
-        )
+        ncells_with_meta['idx'] = np.arange(len(ncells_with_meta))
 
-        X = np.zeros((len(new_order), adata.X.shape[1]), adata.X.dtype)
+        # To coarse grain, we need two things:
+        # 1. the number of cells in each group
+        # 2. the index of cells in each group
+        gby = ncells_with_meta.groupby(groupby)
+
+        X = np.zeros((gby.ngroups, adata.X.shape[1]), adata.X.dtype)
+        obs_names = []
         if adata.layers:
             layers = {
-                key: np.zeros((len(new_order), layer.shape[1]), layer.dtype) for key, layer in adata.layers.items()
+                key: np.zeros((gby.ngroups, layer.shape[1]), layer.dtype) for key, layer in adata.layers.items()
             }
-        for i in range(len(new_order)):
-            groupid = ncells_cg.index[i]
-            idx = ncells_with_meta[groupby[0]] == groupid[0]
-            if len(groupid) > 1:
-                for j in range(1, len(groupid)):
-                    idx &= ncells_with_meta[groupby[j]] == groupid[j]
-            idx = idx.values.nonzero()[0]
-            X[i] = (X[idx] * ncells_with_meta.iloc[idx].values).sum(axis=0) / ncells_cg.iloc[i]
+
+        for i, (groupid, group) in enumerate(gby):
+            idx = group['idx'].values
+            ncell = group['cell_count'].values
+            ncell_cg = ncell.sum()
+            #print(groupid)
+            #print(group)
+            #print(adata.X[idx].shape)
+            X[i] = (adata.X[idx] * ncell).sum(axis=0) / ncell_cg
             if adata.layers:
                 for key in layers:
-                    Xl = adata.layers[key]
-                    layers[key][i] = (Xl[idx] * ncells_with_meta.iloc[idx]).sum(axis=0) / ncells_cg.iloc[i]
+                    layers[key][i] = (adata.layers[key][idx] * ncell).sum(axis=0) / ncell_cg
+            obs_name = '\t'.join(str(gid) for gid in groupid)
+            obs_names.append(obs_name)
 
         if adata.layers:
             adata_cg = anndata.AnnData(
@@ -98,7 +102,8 @@ def coarse_grain_anndata(adata, groupby):
             )
 
         # Obs names and metadata
-        adata_cg.obs_names = new_order
+        ncells_cg = gby.sum()['cell_count']
+        adata_cg.obs_names = obs_names
         adata_cg.obs['cell_count'] = ncells_cg.values
         for gb in groupby:
             adata_cg.obs[gb] = ncells_cg.index.get_level_values(gb)

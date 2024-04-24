@@ -8,12 +8,14 @@ from .utils import (
     normalise_counts,
     correct_annotations,
     approximate_dataset,
-    store_approximation,
     guess_measurement_type,
     guess_normalisation,
     guess_celltype_column,
     guess_celltype_order,
     )
+from .io import (
+    write_to_h5,
+)
 
 
 
@@ -122,7 +124,7 @@ class Compressor:
         if self.output_filename is not None:
             if self.output_filename.exists():
                 os.remove(self.output_filename)
-            store_approximation(
+            write_to_h5(
                 self.output_filename,
                 self.approximation,
             )

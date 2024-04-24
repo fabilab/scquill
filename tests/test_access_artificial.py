@@ -24,7 +24,7 @@ def test_300x500_to_anndata_neighborhood(shared_datadir):
     )
     adata = q.to_anndata(neighborhood=True)
     assert frozenset(adata.obs_names) == frozenset(
-        [f"neighborhood_{i+1}" for i in range(30)]
+        [str(i) for i in range(30)]
     )
     assert "convex_hulls" in adata.uns.keys()
     assert list(adata.obsm.keys()) == ["X_ncells", "X_umap"]
@@ -38,11 +38,10 @@ def test_300x500_to_anndata_coarse_grain_1level(shared_datadir):
         neighborhood=False,
         groupby=["celltype", "disease"],
     )
-    assert frozenset(adata.obs_names) == frozenset(
-        [f"celltype_{i+1}" for i in range(10)]
-    )
+    assert list(adata.obs_names)[0] == 'celltype_1\tFalse'
+    assert list(adata.obs_names)[1] == 'celltype_1\tTrue'
 
-    adata_cg = scquill.coarse_grain(
+    adata_cg = scquill.coarse_grain_anndata(
         adata,
         "celltype",
     )
