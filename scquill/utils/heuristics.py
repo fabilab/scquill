@@ -21,7 +21,7 @@ def guess_normalisation(adata):
     if adata.X.max() > 50:
         raise ValueError("Could not guess normalisation of this data set")
 
-    Xe = np.expm1(X)
+    Xe = np.expm1(adata.X)
     adatae = anndata.AnnData(X=Xe)
     norm = guess_normalisation(adatae)
     if norm == 'cpm':
