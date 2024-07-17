@@ -8,10 +8,11 @@ def guess_normalisation(adata):
     if (adata.n_obs == 0):
         raise ValueError("Single cell data set must have at least one observation/cell.""")
 
-    sum0 = int(adata.X[0].sum())
-    if sum0 == 10000:
+    nsample = min(100, adata.n_obs)
+    sum0 = int(adata.X[:nsample].sum() / nsample)
+    if 9000 < sum0 < 11000:
         return 'cptt'
-    if sum0 == 1000000:
+    if 900000 < sum0 < 1100000:
         return 'cpm'
 
     is_integer = (np.floor(adata.X.data[:30]) == np.ceil(adata.X.data[:30])).all()

@@ -15,7 +15,7 @@ def read_h5_to_anndata(
         raise KeyError("Measurement type not found: {measurement_type}")
 
     me = h5_data["measurements"][measurement_type]
-    compression = me.attrs["compression"]
+    compression = me.attrs.get("compression", None)
 
     if compression:
         try:
@@ -32,10 +32,10 @@ def read_h5_to_anndata(
 
     groupby_names = []
     groupby_dtypes = []
-    n_levels = me["groupby"].attrs["n_levels"]
+    n_levels = me["grouped_by"].attrs["n_levels"]
     for i in range(n_levels):
-        groupby_names.append(me["groupby"]["names"].attrs[str(i)])
-        groupby_dtypes.append(me["groupby"]["dtypes"].attrs[str(i)])
+        groupby_names.append(me["grouped_by"]["names"].attrs[str(i)])
+        groupby_dtypes.append(me["grouped_by"]["dtypes"].attrs[str(i)])
     groupby = "\t".join(groupby_names)
 
     if neighborhood:

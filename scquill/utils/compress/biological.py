@@ -20,7 +20,9 @@ def _compress_biological(
     groupby_columns = [celltype_column] + list(additional_groupby_columns)
     tmp = adata.obs[groupby_columns].copy()
     tmp['cell_count'] = 1
-    obs = tmp.groupby(groupby_columns, observed=False).sum().reset_index()
+    # NOTE: "observbed" seems to be a little iffy incl. for the pandas folks who are defaulting it to True and deprecating it in the future
+    # We recently changed this from False to True (17 July 2024)
+    obs = tmp.groupby(groupby_columns, observed=True).sum().reset_index()
     ngroups = len(obs)
 
     # Names of rows

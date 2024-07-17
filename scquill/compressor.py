@@ -100,10 +100,15 @@ class Compressor:
 
         self.adata = filter_cells(self.adata, config)
 
+        if "normalisation" not in config:
+            config["normalisation"] = guess_normalisation(self.adata)
+        if "measurement_type" not in config:
+            config["measurement_type"] = guess_measurement_type(self.adata)
+
         self.adata = normalise_counts(
             self.adata,
-            config.get("normalisation", guess_normalisation(self.adata)),
-            config.get("measurement_type", guess_measurement_type(self.adata)),
+            config["normalisation"],
+            config["measurement_type"],
         )
 
         #self.adata = correct_annotations(
