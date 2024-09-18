@@ -36,7 +36,7 @@ def approximate_dataset(
         measurement_type,
     )
 
-    features = adata.var_names
+    features = adata.var.feature_id
     result = {
         'var_names': features,
         'obs': biod['obs'],
