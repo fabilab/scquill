@@ -29,6 +29,7 @@ class Compressor:
         additional_groupby_columns=tuple(),
         configuration=None,
         include_neighborhood=True,
+        measurement_type="gene_expression",
     ):
 
         self.filename = filename
@@ -39,6 +40,7 @@ class Compressor:
         self.additional_groupby_columns = additional_groupby_columns
         self.configuration = configuration
         self.include_neighborhood = include_neighborhood
+        self.measurement_type = measurement_type
 
     def __call__(self):
         self.prepare()
@@ -120,6 +122,7 @@ class Compressor:
             self.adata,
             self.celltype_column,
             self.additional_groupby_columns,
+            measurement_type=self.measurement_type,
         )
 
     def store(self):
@@ -134,10 +137,11 @@ class Compressor:
     def to_anndata(self):
         """Export approximation to anndata object."""
         adata = anndata.AnnData(
-            X=self.approximation["Xave"],
-            obs=self.approximation["obs"],
+            X=self.approximation[self.measurement_type]["Xave"],
+            obs=self.approximation[self.measurement_type]["obs"],
         )
-        adata.obs_names = self.approximation["obs_names"]
+        adata.obs_names = self.approximation[self.measurement_type]["obs_names"]
+        adata.uns["measurement_type"] = self.measurement_type
         return adata
 
     @classmethod
@@ -145,16 +149,24 @@ class Compressor:
         cls,
         adata,
         output_filename=None,
+        measurement_type=None,
     ):
         """Create a compressor from an anndata object."""
         self = cls(
             output_filename=output_filename,
             include_neighborhood=False,
         )
+
+        if measurement_type is None:
+            measurement_type = adata.uns.get("measurement_type", "gene_expression")
+
+        self.measurement_type = measurement_type
         self.approximation = {
-            "Xave": adata.X,
-            "obs": adata.obs,
-            "obs_names": adata.obs_names,
+            measurement_type: {
+                "Xave": adata.X,
+                "obs": adata.obs,
+                "obs_names": adata.obs_names,
+            }
         }
 
         return self
