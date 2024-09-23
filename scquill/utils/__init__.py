@@ -1,6 +1,7 @@
-'''
+"""
 Utility functions for the compression
-'''
+"""
+
 import os
 import gc
 import pathlib
@@ -30,3 +31,4 @@ from .heuristics import (
 from .coarse_grain import (
     coarse_grain_anndata,
 )
+from .concatenate import concatenate

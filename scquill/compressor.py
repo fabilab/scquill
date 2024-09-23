@@ -12,11 +12,10 @@ from .utils import (
     guess_normalisation,
     guess_celltype_column,
     guess_celltype_order,
-    )
+)
 from .io import (
     write_to_h5,
 )
-
 
 
 class Compressor:
@@ -30,7 +29,7 @@ class Compressor:
         additional_groupby_columns=tuple(),
         configuration=None,
         include_neighborhood=True,
-        ):
+    ):
 
         self.filename = filename
         self.adata = adata
@@ -63,7 +62,8 @@ class Compressor:
 
         if self.celltype_order is None:
             self.celltype_order = guess_celltype_order(
-                self.adata, self.celltype_column,
+                self.adata,
+                self.celltype_column,
             )
 
         if self.additional_groupby_columns is None:
@@ -78,15 +78,13 @@ class Compressor:
         value = tuple(value)
         if self.celltype_column in value:
             raise ValueError(
-                'The cell type column cannot also be an additional column',
+                "The cell type column cannot also be an additional column",
             )
         self._additonal_groupby_columns = value
 
     def load(self):
         if (self.adata is None) and (self.filename is None):
-            raise ValueError(
-                "Either filename or adata must be specified."
-            )
+            raise ValueError("Either filename or adata must be specified.")
 
         if self.adata is not None:
             return
@@ -111,11 +109,11 @@ class Compressor:
             config["measurement_type"],
         )
 
-        #self.adata = correct_annotations(
+        # self.adata = correct_annotations(
         #    self.adata,
         #    self.celltype_column,
         #    config,
-        #)
+        # )
 
     def compress(self):
         self.approximation = approximate_dataset(
@@ -125,7 +123,6 @@ class Compressor:
         )
 
     def store(self):
-        config = self.configuration
         if self.output_filename is not None:
             if self.output_filename.exists():
                 os.remove(self.output_filename)
@@ -133,3 +130,31 @@ class Compressor:
                 self.output_filename,
                 self.approximation,
             )
+
+    def to_anndata(self):
+        """Export approximation to anndata object."""
+        adata = anndata.AnnData(
+            X=self.approximation["Xave"],
+            obs=self.approximation["obs"],
+        )
+        adata.obs_names = self.approximation["obs_names"]
+        return adata
+
+    @classmethod
+    def from_anndata(
+        cls,
+        adata,
+        output_filename=None,
+    ):
+        """Create a compressor from an anndata object."""
+        self = cls(
+            output_filename=output_filename,
+            include_neighborhood=False,
+        )
+        self.approximation = {
+            "Xave": adata.X,
+            "obs": adata.obs,
+            "obs_names": adata.obs_names,
+        }
+
+        return self
