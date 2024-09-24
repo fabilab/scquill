@@ -127,7 +127,7 @@ class Compressor:
 
     def store(self):
         if self.output_filename is not None:
-            if self.output_filename.exists():
+            if pathlib.Path(self.output_filename).exists():
                 os.remove(self.output_filename)
             write_to_h5(
                 self.output_filename,
@@ -135,7 +135,7 @@ class Compressor:
             )
 
     def to_anndata(self):
-        """Export approximation to anndata object."""
+        """Export approximation to anndata object, excluding the neighborhood."""
         adata = anndata.AnnData(
             X=self.approximation[self.measurement_type]["Xave"].T,
             obs=self.approximation[self.measurement_type]["obs"],
