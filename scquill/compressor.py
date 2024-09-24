@@ -141,6 +141,7 @@ class Compressor:
             obs=self.approximation[self.measurement_type]["obs"],
         )
         adata.obs_names = self.approximation[self.measurement_type]["obs_names"]
+        adata.var_names = self.approximation[self.measurement_type]["var_names"]
         adata.uns["measurement_type"] = self.measurement_type
         return adata
 
@@ -166,6 +167,7 @@ class Compressor:
                 "Xave": adata.X.T,
                 "obs": adata.obs,
                 "obs_names": adata.obs_names,
+                "var_names": adata.var_names,
             }
         }
 
