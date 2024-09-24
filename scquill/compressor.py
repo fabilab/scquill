@@ -123,6 +123,7 @@ class Compressor:
             self.celltype_column,
             self.additional_groupby_columns,
             measurement_type=self.measurement_type,
+            include_neighborhood=self.include_neighborhood,
         )
 
     def store(self):
@@ -136,13 +137,17 @@ class Compressor:
 
     def to_anndata(self):
         """Export approximation to anndata object, excluding the neighborhood."""
+        mt = self.measurement_type
         adata = anndata.AnnData(
-            X=self.approximation[self.measurement_type]["Xave"].T,
-            obs=self.approximation[self.measurement_type]["obs"],
+            X=self.approximation[mt]["Xave"].T,
+            obs=self.approximation[mt]["obs"],
+            layers={
+                "fraction_detected": self.approximation[mt]["Xfrac"].T,
+            },
         )
-        adata.obs_names = self.approximation[self.measurement_type]["obs_names"]
-        adata.var_names = self.approximation[self.measurement_type]["var_names"]
-        adata.uns["measurement_type"] = self.measurement_type
+        adata.obs_names = self.approximation[mt]["obs_names"]
+        adata.var_names = self.approximation[mt]["var_names"]
+        adata.uns["measurement_type"] = mt
         return adata
 
     @classmethod
@@ -165,6 +170,7 @@ class Compressor:
         self.approximation = {
             measurement_type: {
                 "Xave": adata.X.T,
+                "Xfrac": adata.layers["fraction_detected"].X.T,
                 "obs": adata.obs,
                 "obs_names": adata.obs_names,
                 "var_names": adata.var_names,
