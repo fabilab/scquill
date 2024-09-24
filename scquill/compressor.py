@@ -137,7 +137,7 @@ class Compressor:
     def to_anndata(self):
         """Export approximation to anndata object."""
         adata = anndata.AnnData(
-            X=self.approximation[self.measurement_type]["Xave"],
+            X=self.approximation[self.measurement_type]["Xave"].T,
             obs=self.approximation[self.measurement_type]["obs"],
         )
         adata.obs_names = self.approximation[self.measurement_type]["obs_names"]
@@ -163,7 +163,7 @@ class Compressor:
         self.measurement_type = measurement_type
         self.approximation = {
             measurement_type: {
-                "Xave": adata.X,
+                "Xave": adata.X.T,
                 "obs": adata.obs,
                 "obs_names": adata.obs_names,
             }

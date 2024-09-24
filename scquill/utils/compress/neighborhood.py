@@ -11,7 +11,7 @@ def _compress_neighborhood(
     obs_bio,
     celltype_column,
     additional_groupby_columns,
-    measurement_type='gene_expression',
+    measurement_type="gene_expression",
     max_cells_per_type=300,
     avg_neighborhoods=3,
 ):
@@ -33,24 +33,26 @@ def _compress_neighborhood(
         # Reconstruct indices of focal cells
         idx[:] = True
         for col in groupby_columns:
-            idx &= (adata.obs[col] == row[col])
+            idx &= adata.obs[col] == row[col]
 
         cell_ids_ct = adata.obs_names[idx]
-        ncell = row['cell_count']
+        ncell = row["cell_count"]
         if ncell > max_cells_per_type:
-            idx_rand = np.random.choice(range(ncell), size=max_cells_per_type, replace=False)
+            idx_rand = np.random.choice(
+                range(ncell), size=max_cells_per_type, replace=False
+            )
             cell_ids_ct = cell_ids_ct[idx_rand]
         cell_ids.extend(list(cell_ids_ct))
     adata = adata[cell_ids].copy()
 
     ##############################################
     # USE AN EXISTING EMBEDDING OR MAKE A NEW ONE
-    emb_keys = ['umap', 'tsne']
+    emb_keys = ["umap", "tsne"]
     for emb_key in emb_keys:
-        if f'X_{emb_key}' in adata.obsm:
+        if f"X_{emb_key}" in adata.obsm:
             break
     else:
-        emb_key = 'umap'
+        emb_key = "umap"
 
         # Log
         sc.pp.log1p(adata)
@@ -64,17 +66,17 @@ def _compress_neighborhood(
         sc.tl.pca(adata)
         sc.pp.neighbors(adata)
         sc.tl.umap(adata)
-        points = adata.obsm[f'X_{emb_key}']
+        points = adata.obsm[f"X_{emb_key}"]
 
         # Back to all features for storage
         adata = adata.raw.to_adata()
-        adata.obsm[f'X_{emb_key}'] = points
+        adata.obsm[f"X_{emb_key}"] = points
 
         # Back to cptt or equivalent for storage
         adata.X.data = np.expm1(adata.X.data)
     ##############################################
 
-    points = adata.obsm[f'X_{emb_key}']
+    points = adata.obsm[f"X_{emb_key}"]
 
     # Do a global clustering, ensuring at least 3 cells
     # for each cluster so you can make convex hulls
@@ -86,20 +88,20 @@ def _compress_neighborhood(
         kmeans = KMeans(
             n_clusters=n_clusters,
             random_state=0,
-            n_init='auto',
-        ).fit(points) 
+            n_init="auto",
+        ).fit(points)
         labels = kmeans.labels_
 
         # Book keep how many cells of each time are in each cluster
         tmp = adata.obs[groupby_columns].copy()
-        tmp['kmeans'] = labels
-        tmp['c'] = 1.0
+        tmp["kmeans"] = labels
+        tmp["c"] = 1.0
         ncells_per_label = (
-                tmp.groupby(['kmeans'] + groupby_columns, observed=False)
-                   .size()
-                   .unstack(0, fill_value=0)
-                   .T
-                   )
+            tmp.groupby(["kmeans"] + groupby_columns, observed=False)
+            .size()
+            .unstack(0, fill_value=0)
+            .T
+        )
         del tmp
 
         # Ensure the order is the same as the averages
@@ -112,27 +114,29 @@ def _compress_neighborhood(
 
     n_neis = kmeans.n_clusters
     nei_avg = pd.DataFrame(
-            np.zeros((len(features), n_neis), np.float32),
-            index=features,
-            )
+        np.zeros((len(features), n_neis), np.float32),
+        index=features,
+    )
     nei_coords = pd.DataFrame(
-            np.zeros((2, n_neis), np.float32),
-            index=['x', 'y'],
-            )
+        np.zeros((2, n_neis), np.float32),
+        index=["x", "y"],
+    )
     convex_hulls = []
     if measurement_type == "gene_expression":
         nei_frac = pd.DataFrame(
-                np.zeros((len(features), n_neis), np.float32),
-                index=features,
-                )
+            np.zeros((len(features), n_neis), np.float32),
+            index=features,
+        )
     for i in range(kmeans.n_clusters):
         idx = kmeans.labels_ == i
 
         # Add the average expression
-        nei_avg.iloc[:, i] = np.asarray(adata.X[idx].mean(axis=0))[0]
+        nei_avg.iloc[:, i] = np.asarray(adata.X[idx].mean(axis=0))[0].astype(np.float32)
         # Add the fraction expressing
         if measurement_type == "gene_expression":
-            nei_frac.iloc[:, i] = np.asarray((adata.X[idx] > 0).mean(axis=0))[0]
+            nei_frac.iloc[:, i] = np.asarray((adata.X[idx] > 0).mean(axis=0))[0].astype(
+                np.float32
+            )
 
         # Add the coordinates of the center
         points_i = points[idx]
@@ -157,14 +161,14 @@ def _compress_neighborhood(
         nei_frac.columns = ncells_per_label.index
 
     neid = {
-        'obs_names': nei_avg.index.values,
-        'cell_count': ncells_per_label.values,
-        'coords_centroid': nei_coords.values,
-        'convex_hull': convex_hulls,
-        'Xave': nei_avg.values,
+        "kind": "neighborhood",
+        "obs_names": nei_avg.index.values,
+        "cell_count": ncells_per_label.values,
+        "coords_centroid": nei_coords.values,
+        "convex_hull": convex_hulls,
+        "Xave": nei_avg.values,
     }
     if measurement_type == "gene_expression":
-        neid['Xfrac'] = nei_frac.values
+        neid["Xfrac"] = nei_frac.values
 
     return neid
-

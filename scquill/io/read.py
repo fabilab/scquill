@@ -1,4 +1,5 @@
 """Read from files."""
+
 import pandas as pd
 import anndata
 
@@ -32,10 +33,10 @@ def read_h5_to_anndata(
 
     groupby_names = []
     groupby_dtypes = []
-    n_levels = me["grouped_by"].attrs["n_levels"]
+    n_levels = me["groupby"].attrs["n_levels"]
     for i in range(n_levels):
-        groupby_names.append(me["grouped_by"]["names"].attrs[str(i)])
-        groupby_dtypes.append(me["grouped_by"]["dtypes"].attrs[str(i)])
+        groupby_names.append(me["groupby"]["names"].attrs[str(i)])
+        groupby_dtypes.append(me["groupby"]["dtypes"].attrs[str(i)])
     groupby = "\t".join(groupby_names)
 
     if neighborhood:
@@ -86,7 +87,7 @@ def read_h5_to_anndata(
                 obs[column] = me["obs"][column].asstr()[:]
             else:
                 obs[column] = me["obs"][column][:]
-        obs["cell_count"] = me['cell_count'][:]
+        obs["cell_count"] = me["cell_count"][:]
 
         if measurement_type == "gene_expression":
             adata = anndata.AnnData(
@@ -112,7 +113,6 @@ def read_h5_to_anndata(
     }
     if neighborhood:
         adata.uns["approximation_groupby"]["order"] = groupby_order
-        adata.uns["approximation_groupby"]["cell_count"] = me['cell_count'][:]
+        adata.uns["approximation_groupby"]["cell_count"] = me["cell_count"][:]
 
     return adata
-
