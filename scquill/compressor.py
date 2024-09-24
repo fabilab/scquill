@@ -170,7 +170,7 @@ class Compressor:
         self.approximation = {
             measurement_type: {
                 "Xave": adata.X.T,
-                "Xfrac": adata.layers["fraction_detected"].X.T,
+                "Xfrac": adata.layers["fraction_detected"].T,
                 "obs": adata.obs,
                 "obs_names": adata.obs_names,
                 "var_names": adata.var_names,
