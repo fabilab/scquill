@@ -1,5 +1,8 @@
 """Read from files."""
 
+import h5py
+import hdf5plugin
+import numpy as np
 import pandas as pd
 import anndata
 
@@ -28,21 +31,30 @@ def read_h5_to_anndata(
 
     var_names = me["var_names"].asstr()[:]
 
-    if "quantisation" in me:
-        quantisation = me["quantisation"][:]
-
-    groupby_names = []
-    groupby_dtypes = []
-    n_levels = me["groupby"].attrs["n_levels"]
-    for i in range(n_levels):
-        groupby_names.append(me["groupby"]["names"].attrs[str(i)])
-        groupby_dtypes.append(me["groupby"]["dtypes"].attrs[str(i)])
-    groupby = "\t".join(groupby_names)
+    # NOTE: there are a few older versions around
+    if "groupby" in me:
+        groupby_names = []
+        groupby_dtypes = []
+        n_levels = me["groupby"].attrs["n_levels"]
+        for i in range(n_levels):
+            groupby_names.append(me["groupby"]["names"].attrs[str(i)])
+            groupby_dtypes.append(me["groupby"]["dtypes"].attrs[str(i)])
+        groupby = "\t".join(groupby_names)
+    else:
+        gbykey = "grouped_by"
+        keys = list(me[gbykey].keys())
+        if len(keys) != 1:
+            raise ValueError("Expected exactly one groupby key, found: {keys}")
+        groupby = keys[0]
+        groupby_names = me[gbykey][groupby]["names"].asstr()[:]
+        groupby_dtypes = me[gbykey][groupby]["dtypes"].asstr()[:]
+        n_levels = len(groupby_names)
 
     if neighborhood:
         neigroup = me["neighborhood"]
         Xave = neigroup["average"][:]
         if "quantisation" in me:
+            quantisation = me["quantisation"][:]
             Xave = quantisation[Xave]
 
         groupby_order = me["obs_names"].asstr()[:]
@@ -73,39 +85,30 @@ def read_h5_to_anndata(
         adata.var_names = pd.Index(var_names, name="features")
 
     else:
-        Xave = me["average"][:]
-        if "quantisation" in me:
-            Xave = quantisation[Xave]
-
-        if measurement_type == "gene_expression":
-            Xfrac = me["fraction"][:]
-        obs_names = me["obs_names"].asstr()[:]
-        # Add obs metadata
-        obs = pd.DataFrame([], index=obs_names)
-        for column, dtype in zip(groupby_names, groupby_dtypes):
-            if _infer_dtype(dtype) == "S":
-                obs[column] = me["obs"][column].asstr()[:]
-            else:
-                obs[column] = me["obs"][column][:]
-        obs["cell_count"] = me["cell_count"][:]
+        # NOTE: this is the historical way to store atlas approximations
+        # when the organism has multiple tissues
+        if "->" in groupby:
+            read_fun = _read_data_from_stratified_group
+        else:
+            read_fun = _read_data_from_flat_group
+        resdict = read_fun(me, groupby, groupby_names, groupby_dtypes, measurement_type)
 
         if measurement_type == "gene_expression":
             adata = anndata.AnnData(
-                X=Xave,
-                obs=obs,
+                X=resdict["Xave"],
+                obs=resdict["obs"],
                 layers={
-                    "average": Xave,
-                    "fraction": Xfrac,
+                    "average": resdict["Xave"],
+                    "fraction": resdict["Xfrac"],
                 },
             )
         else:
             adata = anndata.AnnData(
-                X=Xave,
-                obs=obs,
+                X=resdict["Xave"],
+                obs=resdict["obs"],
             )
 
         adata.var_names = pd.Index(var_names, name="features")
-        adata.obs_names = pd.Index(obs_names, name=groupby)
 
     adata.uns["approximation_groupby"] = {
         "names": groupby_names,
@@ -116,3 +119,89 @@ def read_h5_to_anndata(
         adata.uns["approximation_groupby"]["cell_count"] = me["cell_count"][:]
 
     return adata
+
+
+def _read_data_from_flat_group(
+    me, groupby, groupby_names, groupby_dtypes, measurement_type
+):
+    # Data
+    Xave = me["average"][:]
+    if "quantisation" in me:
+        quantisation = me["quantisation"][:]
+        Xave = quantisation[Xave]
+    if measurement_type == "gene_expression":
+        Xfrac = me["fraction"][:]
+
+    # Obs metadata
+    obs_names = me["obs_names"].asstr()[:]
+    obs = pd.DataFrame([], index=obs_names)
+    for column, dtype in zip(groupby_names, groupby_dtypes):
+        if _infer_dtype(dtype) == "S":
+            obs[column] = me["obs"][column].asstr()[:]
+        else:
+            obs[column] = me["obs"][column][:]
+    obs["cell_count"] = me["cell_count"][:]
+    obs.index = pd.Index(obs.index, name=groupby)
+
+    resdict = {
+        "Xave": Xave,
+        "obs": obs,
+    }
+    if measurement_type == "gene_expression":
+        resdict["Xfrac"] = Xfrac
+    return resdict
+
+
+def _read_data_from_stratified_group(
+    me, groupby, groupby_names, groupby_dtypes, measurement_type
+):
+    """Read data from a stratified group.
+
+    NOTE: This is the historical way to store atlas approximations. It groups data by tissue (to have distinct neighborhoods)
+    and then the obs_names inside each subgroup are the cell types. This function is therefore quite ad-hoc but it's ok for now.
+    """
+    # Iterate over the higher-level groups (tissues)
+    Xave = []
+    if measurement_type == "gene_expression":
+        Xfrac = []
+    obs = []
+
+    # E.g. "tissues"
+    groupby = "->".join(groupby_names)
+    group = me["data"][groupby]
+    for subgroupname, subgroup in group.items():
+        # Data
+        subXave = subgroup["average"][:]
+        if "quantisation" in me:
+            quantisation = me["quantisation"][:]
+            subXave = quantisation[subXave]
+        Xave.append(subXave)
+        if measurement_type == "gene_expression":
+            Xfrac.append(subgroup["fraction"][:])
+
+        # Obs metadata (notice the tricky obs_names indexing)
+        subobs_names = subgroup["obs_names"].asstr()[:]
+        subobs = pd.DataFrame([], index=subobs_names)
+        # Set the common column (typically tissue)
+        subobs[groupby_names[0]] = subgroupname
+        # Set the discriminative column (typicall cell type)
+        subobs[groupby_names[1]] = subobs_names
+        # NOTE: assuming there are not other columns, i.e. something like tissue->celltype\tage is not supported
+        subobs["cell_count"] = subgroup["cell_count"][:]
+        subobs.index = subobs[groupby_names].apply("->".join, axis=1)
+        obs.append(subobs)
+
+    # Concatenate the lists
+    Xave = np.concatenate(Xave)
+    obs = pd.concat(obs)
+    obs.index = pd.Index(obs.index, name=groupby)
+    resdict = {
+        "Xave": Xave,
+        "obs": obs,
+    }
+
+    if measurement_type == "gene_expression":
+        Xfrac = np.concatenate(Xfrac)
+        resdict["Xfrac"] = Xfrac
+
+    return resdict
