@@ -50,16 +50,19 @@ class Approximation:
         self,
         neighborhood=False,
         measurement_type=None,
+        features=None,
     ):
         if self.approximation_dict:
             adata = self._appdict_to_anndata(
                 neighborhood=neighborhood,
                 measurement_type=measurement_type,
+                features=features,
             )
         else:
             adata = self._h5file_to_anndata(
                 neighborhood=neighborhood,
                 measurement_type=measurement_type,
+                features=features,
             )
         self._adata_dict[(measurement_type, neighborhood)] = adata
 
@@ -67,6 +70,7 @@ class Approximation:
         self,
         neighborhood,
         measurement_type,
+        features=None,
     ):
         with h5py.File(self.filename) as h5_data:
             if measurement_type is None:
@@ -75,12 +79,14 @@ class Approximation:
                 h5_data,
                 neighborhood,
                 measurement_type,
+                features=features,
             )
         return adata
 
     def _appdict_to_anndata(
         neighborhood,
         measurement_type,
+        features=None,
     ):
         compressed_atlas = self.approximation_dict
 
@@ -152,6 +158,10 @@ class Approximation:
         if neighborhood:
             adata.uns["approximation_groupby"]["order"] = resd["avg"].index.values
 
+        # TDO: optimise this part
+        if features is not None:
+            adata = adata[:, features]
+
         return adata
 
     def to_anndata(
@@ -159,7 +169,16 @@ class Approximation:
         groupby="celltype",
         neighborhood=False,
         measurement_type=None,
+        features=None,
     ):
+        """Convert approximation to anndata.
+
+        Args:
+            groupby (str, list): Groupby columns to include in the anndata object.
+            neighborhood (bool): Include neighborhood information.
+            measurement_type (str): Measurement type to include.
+            features (list): Features to include. if None, all features are included.
+        """
         if measurement_type is None:
             with h5py.File(self.filename) as h5_data:
                 measurement_type = self._infer_measurement_type(h5_data)
@@ -172,6 +191,7 @@ class Approximation:
             self._to_anndata(
                 neighborhood=neighborhood,
                 measurement_type=measurement_type,
+                features=features,
             )
 
         # FIXME: specify that it's a view somehow

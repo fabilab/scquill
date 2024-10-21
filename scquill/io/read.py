@@ -9,10 +9,24 @@ import anndata
 from scquill.utils.types import _infer_dtype
 
 
+def _order_reorder_features(dataset, var_idx, features, axis):
+    """Efficiently extract unordered slices from an HDF5 dataset."""
+    if var_idx is None:
+        return dataset[:]
+
+    idx1 = var_idx["ordered"].values
+    idx2 = var_idx.loc[features, "reordered"].values
+    if axis == 0:
+        return dataset[idx1][idx2]
+    else:
+        return dataset[:, idx1][:, idx2]
+
+
 def read_h5_to_anndata(
     h5_data,
     neighborhood,
     measurement_type,
+    features=None,
 ):
     """Get an AnnData object in which each observation is an average."""
     if measurement_type not in h5_data["measurements"]:
@@ -30,6 +44,17 @@ def read_h5_to_anndata(
             )
 
     var_names = me["var_names"].asstr()[:]
+    if features is not None:
+        var_idx = (
+            pd.Series(np.arange(len(var_names)), index=var_names)
+            .loc[features]
+            .sort_values()
+            .to_frame("ordered")
+        )
+        var_idx["reordered"] = np.arange(len(var_idx))
+        var_names = features
+    else:
+        var_idx = None
 
     # NOTE: there are a few older versions around
     if "groupby" in me:
@@ -51,8 +76,9 @@ def read_h5_to_anndata(
         n_levels = len(groupby_names)
 
     if neighborhood:
+        # TODO: read from neighborhood for flat groups (e.g. atlasapprox)
         neigroup = me["neighborhood"]
-        Xave = neigroup["average"][:]
+        Xave = _order_reorder_features(neigroup["average"], var_idx, features, axis=1)
         if "quantisation" in me:
             quantisation = me["quantisation"][:]
             Xave = quantisation[Xave]
@@ -66,7 +92,9 @@ def read_h5_to_anndata(
             convex_hulls.append(neigroup["convex_hull"][str(ih)][:])
 
         if measurement_type == "gene_expression":
-            Xfrac = neigroup["fraction"][:]
+            Xfrac = _order_reorder_features(
+                neigroup["fraction"], var_idx, features, axis=1
+            )
             adata = anndata.AnnData(
                 X=Xave,
                 layers={
@@ -91,7 +119,15 @@ def read_h5_to_anndata(
             read_fun = _read_data_from_stratified_group
         else:
             read_fun = _read_data_from_flat_group
-        resdict = read_fun(me, groupby, groupby_names, groupby_dtypes, measurement_type)
+        resdict = read_fun(
+            me,
+            groupby,
+            groupby_names,
+            groupby_dtypes,
+            measurement_type,
+            var_idx,
+            features,
+        )
 
         if measurement_type == "gene_expression":
             adata = anndata.AnnData(
@@ -122,15 +158,21 @@ def read_h5_to_anndata(
 
 
 def _read_data_from_flat_group(
-    me, groupby, groupby_names, groupby_dtypes, measurement_type
+    me,
+    groupby,
+    groupby_names,
+    groupby_dtypes,
+    measurement_type,
+    var_idx,
+    features,
 ):
     # Data
-    Xave = me["average"][:]
+    Xave = _order_reorder_features(me["average"], var_idx, features, axis=1)
     if "quantisation" in me:
         quantisation = me["quantisation"][:]
         Xave = quantisation[Xave]
     if measurement_type == "gene_expression":
-        Xfrac = me["fraction"][:]
+        Xfrac = _order_reorder_features(me["fraction"], var_idx, features, axis=1)
 
     # Obs metadata
     obs_names = me["obs_names"].asstr()[:]
@@ -153,7 +195,13 @@ def _read_data_from_flat_group(
 
 
 def _read_data_from_stratified_group(
-    me, groupby, groupby_names, groupby_dtypes, measurement_type
+    me,
+    groupby,
+    groupby_names,
+    groupby_dtypes,
+    measurement_type,
+    var_idx,
+    features,
 ):
     """Read data from a stratified group.
 
@@ -171,13 +219,17 @@ def _read_data_from_stratified_group(
     group = me["data"][groupby]
     for subgroupname, subgroup in group.items():
         # Data
-        subXave = subgroup["average"][:]
+        subXave = _order_reorder_features(
+            subgroup["average"], var_idx, features, axis=1
+        )
         if "quantisation" in me:
             quantisation = me["quantisation"][:]
             subXave = quantisation[subXave]
         Xave.append(subXave)
         if measurement_type == "gene_expression":
-            Xfrac.append(subgroup["fraction"][:])
+            Xfrac.append(
+                _order_reorder_features(subgroup["fraction"], var_idx, features, axis=1)
+            )
 
         # Obs metadata (notice the tricky obs_names indexing)
         subobs_names = subgroup["obs_names"].asstr()[:]

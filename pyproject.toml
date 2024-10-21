@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "scquill"
-version = "0.3.0"
+version = "0.3.1"
 description = "Approximate any single cell data set, saving >99% of memory and runtime."
 authors = ["Fabio Zanini <fabio.zanini@unsw.edu.au>"]
 license = "MIT"
