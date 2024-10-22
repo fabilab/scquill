@@ -16,4 +16,5 @@ __all__ = (
     "Compressor",
     "Approximation",
     "pl",
+    "coarse_grain_anndata",
 )
