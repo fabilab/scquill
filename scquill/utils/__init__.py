@@ -32,3 +32,4 @@ from .coarse_grain import (
     coarse_grain_anndata,
 )
 from .concatenate import concatenate
+from .sequences import get_feature_sequences
